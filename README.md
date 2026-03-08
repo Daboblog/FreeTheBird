@@ -1,12 +1,5 @@
 <p align="center">
-  <img src="freethebird_256.png" alt="FreeTheBird" width="128"/>
-</p>
-
-<h1 align="center">FreeTheBird</h1>
-
-<p align="center">
-  <strong>A privacy-first, lightweight X (Twitter) client for GNU/Linux</strong><br>
-  No Electron. No bloat. No tracking. Just 50KB of Python.
+  <img src="freethebird_social_preview.png" alt="FreeTheBird — A privacy-first, lightweight X (Twitter) client for GNU/Linux" width="800"/>
 </p>
 
 <p align="center">
