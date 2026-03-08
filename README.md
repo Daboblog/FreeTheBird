@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A privacy-first, lightweight X (Twitter) client for GNU/Linux</strong><br>
-  No Electron. No bloat. No tracking. Just 25KB of Python.
+  No Electron. No bloat. No tracking. Just 50KB of Python.
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@ Busqué una solución ligera, nativa, que respetase mi privacidad y no tratase m
 
 ## Qué es FreeTheBird
 
-FreeTheBird es un cliente ligero para X (Twitter) construido con **PyQt6 + QtWebEngine**. Un solo archivo Python de 25KB que usa las librerías Qt del sistema. Sin Electron. Sin `node_modules`. Sin 150MB de runtime empaquetado. Sin rastreo.
+FreeTheBird es un cliente ligero para X (Twitter) construido con **PyQt6 + QtWebEngine**. Un solo archivo Python de 50KB que usa las librerías Qt del sistema. Sin Electron. Sin `node_modules`. Sin 150MB de runtime empaquetado. Sin rastreo.
 
 El nombre es un acto de protesta y una declaración de intenciones: **liberar al pájaro** que fue enjaulado.
 
@@ -41,7 +41,7 @@ El nombre es un acto de protesta y una declaración de intenciones: **liberar al
 | | FreeTheBird | Clientes Electron |
 |---|---|---|
 | **RAM** | ~150-200MB | 300-500MB |
-| **Instalación** | 25KB (1 archivo .py) | 80-150MB |
+| **Instalación** | 50KB (1 archivo .py) | 80-150MB |
 | **Bloqueo de trackers** | Sí, a nivel de red | No |
 | **Dependencias** | Qt6 del sistema | Chromium empaquetado |
 | **Node.js** | No necesario | Obligatorio |
