@@ -1,0 +1,41 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="64" height="64" rx="12" fill="#1a1a2e"/>
+  
+  <!-- Cage (broken) - vertical bars -->
+  <rect x="14" y="18" width="2.5" height="34" rx="1" fill="#555" opacity="0.8"/>
+  <rect x="22" y="18" width="2.5" height="34" rx="1" fill="#555" opacity="0.8"/>
+  <!-- Broken bar - tilted/snapped -->
+  <rect x="29" y="18" width="2.5" height="16" rx="1" fill="#555" opacity="0.6" transform="rotate(15, 30, 26)"/>
+  <rect x="30" y="38" width="2.5" height="14" rx="1" fill="#555" opacity="0.6" transform="rotate(-8, 31, 45)"/>
+  <!-- More cage bars -->
+  <rect x="38" y="18" width="2.5" height="34" rx="1" fill="#555" opacity="0.4"/>
+  
+  <!-- Cage top arc -->
+  <path d="M12 20 Q12 10 27 10 Q42 10 42 20" stroke="#555" stroke-width="2.5" fill="none" opacity="0.7" stroke-linecap="round"/>
+  
+  <!-- Cage bottom -->
+  <rect x="12" y="50" width="32" height="2.5" rx="1" fill="#555" opacity="0.7"/>
+  
+  <!-- Bird (flying free, outside the cage to the right) -->
+  <g transform="translate(38, 14)">
+    <!-- Body -->
+    <ellipse cx="10" cy="12" rx="7" ry="5.5" fill="#1da1f2"/>
+    <!-- Head -->
+    <circle cx="16" cy="8" r="4.5" fill="#1da1f2"/>
+    <!-- Beak -->
+    <polygon points="20,7 25,8.5 20,10" fill="#ffcc00"/>
+    <!-- Eye -->
+    <circle cx="17.5" cy="7" r="1.2" fill="white"/>
+    <circle cx="18" cy="7" r="0.6" fill="#1a1a2e"/>
+    <!-- Wing (raised, in flight) -->
+    <path d="M6 11 Q2 3 8 1 Q14 -1 13 7 Z" fill="#0d8ecf"/>
+    <!-- Tail feathers -->
+    <path d="M3 13 Q-2 10 -1 15 Q0 17 4 15 Z" fill="#0d8ecf"/>
+  </g>
+  
+  <!-- Freedom sparkles -->
+  <circle cx="52" cy="8" r="1.5" fill="#ffcc00" opacity="0.9"/>
+  <circle cx="56" cy="14" r="1" fill="#ffcc00" opacity="0.7"/>
+  <circle cx="48" cy="5" r="1" fill="#ffcc00" opacity="0.6"/>
+</svg>
