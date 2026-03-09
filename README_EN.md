@@ -2,13 +2,6 @@
   <img src="freethebird_social_preview.png" alt="FreeTheBird — A privacy-first, lightweight X (Twitter) client for GNU/Linux" width="800"/>
 </p>
 
-<p align="center">
-  <a href="https://x.com/daboblog">X: @daboblog</a> · 
-  <a href="https://bsky.app/profile/daboblog.bsky.social">Bluesky: @daboblog</a> · 
-  <a href="https://davidhernandez.es">davidhernandez.es</a> · 
-  <a href="https://daboblog.com">daboblog.com</a>
-</p>
-
 ---
 
 **[Versión en Español (README.md)](README.md)**
@@ -159,18 +152,9 @@ update-desktop-database ~/.local/share/applications/
 
 FreeTheBird blocks third-party trackers and ads at the network level, but **cannot block native X ads** (promoted tweets), as those are served from X's own domain.
 
-## About the author
+## Author
 
-I'm [David Hernández (Dabo)](https://davidhernandez.es), a professional in Hacking and GNU/Linux web server administration. Speaker at major events in Spain (RootedCON, ConectaCON, MorterueloCON, ENISE, QurtubaCON). I've been working with GNU/Linux on my desktop and servers for over 20 years. Wherever there's Debian and Free Software, you'll find me ;)
-
-FreeTheBird was born from a real need: being able to access X when necessary, without giving up my privacy or the principles I stand for. All of this coming from someone who misses the old Twitter that will never come back, especially not in the hands of someone as dangerous as Elon Musk. I've barely participated for about a year now (and I'm not sure if I will, except to protest).
-
-- [@daboblog on X](https://x.com/daboblog)
-- [@daboblog on Bluesky](https://bsky.app/profile/daboblog.bsky.social)
-- [davidhernandez.es](https://davidhernandez.es)
-- [daboblog.com](https://daboblog.com)
-- [APACHEctl](https://apachectl.com) -- My company
-- [Debian Hackers](https://debianhackers.net)
+Created by [David Hernández (Dabo)](https://x.com/daboblog), cybersecurity professional and GNU/Linux systems administrator.
 
 ## License
 
