@@ -13,108 +13,108 @@
 
 ---
 
-**[English version (README_EN.md)](README_EN.md)**
+**[Versión en Español (README_ES.md)](README_ES.md)**
 
-## Por qué existe FreeTheBird
+## Why FreeTheBird exists
 
-No voy a engañar a nadie: estoy muy fuera de la órbita de X. Lo que ha pasado con Twitter me parece un desastre, y creo que la mayoría de la comunidad de software libre y ciberseguridad piensa algo parecido. Pero también soy realista. X sigue siendo, a día de hoy, un lugar donde pasan cosas. Donde se rompen noticias, donde la comunidad tech debate, donde mucha gente que me interesa sigue publicando. A veces necesitas entrar, leer, participar en la conversación, y salir.
+I won't sugarcoat it: I'm mostly out of X's orbit. What happened to Twitter is a disaster, and I think most of the free software and cybersecurity community feels the same way. But I'm also a realist. X is still, today, a place where things happen. Where news breaks, where the tech community debates, where many people I care about still post. Sometimes you need to get in, read, join the conversation, and get out.
 
-El problema es **cómo** entras.
+The problem is **how** you get in.
 
-La web de X es un monstruo de rastreo. Cada clic, cada scroll, cada segundo que pasas ahí está siendo monitorizado, perfilado y vendido. Y las alternativas de escritorio que existen para GNU/Linux son, en su mayoría, wrappers basados en Electron: un Chromium entero empaquetado por cada aplicación, comiendo 300-500MB de RAM para hacer exactamente lo mismo que un navegador.
+X's website is a tracking monster. Every click, every scroll, every second you spend there is being monitored, profiled and sold. And the desktop alternatives available for GNU/Linux are mostly Electron-based wrappers: an entire Chromium packaged per application, eating 300-500MB of RAM to do exactly the same thing a browser does.
 
-Busqué una solución ligera, nativa, que respetase mi privacidad y no tratase mi equipo como si tuviese recursos infinitos. No la encontré. Así que la hice.
+I looked for a lightweight, native solution that respected my privacy and didn't treat my machine as if it had infinite resources. I didn't find one. So I built it.
 
-## Qué es FreeTheBird
+## What is FreeTheBird
 
-FreeTheBird es un cliente ligero para X (Twitter) construido con **PyQt6 + QtWebEngine**. Un solo archivo Python de 50KB que usa las librerías Qt del sistema. Sin Electron. Sin `node_modules`. Sin 150MB de runtime empaquetado. Sin rastreo.
+FreeTheBird is a lightweight X (Twitter) client built with **PyQt6 + QtWebEngine**. A single 50KB Python file that uses the system's Qt libraries. No Electron. No `node_modules`. No 150MB packaged runtime. No tracking.
 
-El nombre es un acto de protesta y una declaración de intenciones: **liberar al pájaro** que fue enjaulado.
+The name is an act of protest and a statement of intent: **free the bird** that was caged.
 
-## Qué aporta frente a Electron
+## What it brings vs Electron
 
-| | FreeTheBird | Clientes Electron |
+| | FreeTheBird | Electron clients |
 |---|---|---|
 | **RAM** | ~150-200MB | 300-500MB |
-| **Instalación** | 50KB (1 archivo .py) | 80-150MB |
-| **Bloqueo de trackers** | Sí, a nivel de red | No |
-| **Dependencias** | Qt6 del sistema | Chromium empaquetado |
-| **Node.js** | No necesario | Obligatorio |
-| **Auditable** | 1 archivo, legible | Miles de dependencias |
-| **Integración Linux** | Nativa (Qt) | Variable |
+| **Install size** | 50KB (1 .py file) | 80-150MB |
+| **Tracker blocking** | Yes, network-level | No |
+| **Dependencies** | System Qt6 | Bundled Chromium |
+| **Node.js** | Not needed | Required |
+| **Auditable** | 1 file, readable | Thousands of deps |
+| **Linux integration** | Native (Qt) | Variable |
 
-## Funcionalidades
+## Features
 
-### Privacidad a nivel de red
+### Network-level privacy
 
-FreeTheBird intercepta cada petición HTTP antes de que salga de la aplicación. Más de 45 dominios de publicidad y rastreo están bloqueados, incluyendo Google Ads, Analytics, Tag Manager, Twitter/X Ads, Facebook tracking, Criteo, Taboola, Outbrain, Hotjar, Mixpanel, FullStory y muchos más. Un indicador en la barra inferior muestra el estado de protección y el número de peticiones bloqueadas en la sesión.
+FreeTheBird intercepts every HTTP request before it leaves the application. Over 45 advertising and tracking domains are blocked, including Google Ads, Analytics, Tag Manager, Twitter/X Ads, Facebook tracking, Criteo, Taboola, Outbrain, Hotjar, Mixpanel, FullStory and many more. An indicator in the bottom bar shows the protection status and the number of blocked requests in the session.
 
-### Interfaz bilingüe (Español / English)
+### Bilingual interface (Spanish / English)
 
-Cambio de idioma en caliente, sin reiniciar. Toda la interfaz se actualiza al instante: menús, toolbar, bandeja del sistema y diálogos.
+Hot-swap language without restarting. The entire interface updates instantly: menus, toolbar, system tray and dialogs.
 
-### Tema oscuro y claro
+### Dark and light theme
 
-Cambio entre modo oscuro y claro con un clic, aplicado a toda la interfaz.
+Switch between dark and light mode with a single click, applied across the entire interface.
 
-### Información de conexión
+### Connection info
 
-Tu IP pública se muestra en la barra de menú. Al hacer clic puedes ver detalles completos de tu conexión: ISP, organización, país, región, ciudad, zona horaria y coordenadas. Útil si trabajas con VPNs o quieres verificar tu punto de salida.
+Your public IP is shown in the menu bar. Click to see full connection details: ISP, organization, country, region, city, timezone and coordinates. Useful if you work with VPNs or want to verify your exit point.
 
-### Traductor integrado
+### Built-in translator
 
-Selecciona cualquier texto en la página y tradúcelo sin salir de la aplicación. Usa la API de Google Translate y muestra el resultado en un diálogo junto con el texto original.
+Select any text on the page and translate it without leaving the app. Uses the Google Translate API and shows the result in a dialog alongside the original text.
 
-### Auto-refresco configurable
+### Configurable auto-refresh
 
-Refresco automático con intervalo ajustable de 10 a 3600 segundos. Activable desde la toolbar, la bandeja del sistema o con `Ctrl+R`.
+Automatic refresh with adjustable interval from 10 to 3600 seconds. Toggle from the toolbar, system tray or with `Ctrl+R`.
 
-### Zoom persistente
+### Persistent zoom
 
-Zoom ajustable con `Ctrl++`, `Ctrl+-`, `Ctrl+0` y botones en la toolbar. El nivel se guarda entre sesiones.
+Adjustable zoom with `Ctrl++`, `Ctrl+-`, `Ctrl+0` and toolbar buttons. The level is saved between sessions.
 
-### Bandeja del sistema
+### System tray
 
-Al cerrar la ventana, la app se minimiza a la bandeja en lugar de cerrarse. Incluye notificaciones cuando hay nuevos mensajes en X.
+When closing the window, the app minimizes to the tray instead of quitting. Includes notifications when there are new messages on X.
 
-### Enlaces externos seguros
+### Safe external links
 
-Todos los enlaces que apuntan fuera de X se abren automáticamente en el navegador del sistema. Nada se carga dentro de la app que no sea de X o sus CDN de medios.
+All links pointing outside X automatically open in the system browser. Nothing loads inside the app that isn't from X or its media CDNs.
 
-### Atajos de teclado
+### Keyboard shortcuts
 
 ```
-F5           Refrescar
-Ctrl+R       Auto-refresco on/off
-Ctrl+H       Inicio / Timeline
-Ctrl+M       Mensajes
-Ctrl+N       Notificaciones
-Ctrl+Q       Salir
-F11          Pantalla completa
+F5           Refresh
+Ctrl+R       Auto-refresh on/off
+Ctrl+H       Home / Timeline
+Ctrl+M       Messages
+Ctrl+N       Notifications
+Ctrl+Q       Quit
+F11          Fullscreen
 Ctrl++/-     Zoom in / out
 Ctrl+0       Zoom 100%
 ```
 
-### Línea de comandos
+### Command line
 
 ```
-python3 freethebird.py                      # Inicio por defecto
-python3 freethebird.py --no-refresh         # Sin auto-refresco
-python3 freethebird.py --refresh 60         # Refresco cada 60s
-python3 freethebird.py --purge              # Limpiar caché
+python3 freethebird.py                      # Default start
+python3 freethebird.py --no-refresh         # No auto-refresh
+python3 freethebird.py --refresh 60         # Refresh every 60s
+python3 freethebird.py --purge              # Clear cache
 python3 freethebird.py --width 1400 --height 900
-python3 freethebird.py --version            # Mostrar versión
+python3 freethebird.py --version            # Show version
 ```
 
-## Instalación
+## Installation
 
-Dependencias:
+Dependencies:
 
 ```bash
 sudo apt install python3-pyqt6 python3-pyqt6.qtwebengine python3-pyqt6.qtsvg
 ```
 
-Descarga y ejecución:
+Download and run:
 
 ```bash
 git clone https://github.com/daboblog/FreeTheBird.git
@@ -122,28 +122,28 @@ cd FreeTheBird
 python3 freethebird.py
 ```
 
-### Probado en
+### Tested on
 
-| Distribución | Python | PyQt6 |
+| Distribution | Python | PyQt6 |
 |---|---|---|
 | Slimbook OS (Ubuntu 24.04) | 3.12.3 | 6.6.1 |
 | Debian 13.3 (Trixie) | 3.13.5 | 6.9.0 |
 
-### Integración con el escritorio (opcional)
+### Desktop integration (optional)
 
 ```bash
-# Copiar iconos
+# Copy icons
 sudo cp freethebird_128.png /usr/share/icons/hicolor/128x128/apps/freethebird.png
 sudo cp freethebird_256.png /usr/share/icons/hicolor/256x256/apps/freethebird.png
 sudo cp freethebird_512.png /usr/share/icons/hicolor/512x512/apps/freethebird.png
 sudo gtk-update-icon-cache /usr/share/icons/hicolor/
 
-# Crear entrada en el menú de aplicaciones
+# Create application menu entry
 cat > ~/.local/share/applications/freethebird.desktop << 'EOF'
 [Desktop Entry]
 Name=FreeTheBird
 Comment=Privacy-first X (Twitter) client for GNU/Linux
-Exec=python3 /ruta/a/freethebird.py
+Exec=python3 /path/to/freethebird.py
 Icon=freethebird
 Terminal=false
 Type=Application
@@ -155,29 +155,29 @@ EOF
 update-desktop-database ~/.local/share/applications/
 ```
 
-## Capturas de pantalla
+## Screenshots
 
 <p align="center">
-  <img src="FreeTheBird-anti-tracker.png" alt="FreeTheBird - Bloqueo de trackers" width="800"/>
+  <img src="FreeTheBird-anti-tracker.png" alt="FreeTheBird - Tracker blocking" width="800"/>
 </p>
 
 <p align="center">
-  <img src="FreeTheBird-track-IP.png" alt="FreeTheBird - Información de conexión" width="800"/>
+  <img src="FreeTheBird-track-IP.png" alt="FreeTheBird - Connection info" width="800"/>
 </p>
 
-## Nota importante
+## Important note
 
-FreeTheBird bloquea trackers y publicidad de terceros a nivel de red, pero **no puede bloquear los anuncios nativos de X** (tweets promocionados), ya que estos se sirven desde el propio dominio de X.
+FreeTheBird blocks third-party trackers and ads at the network level, but **cannot block native X ads** (promoted tweets), as those are served from X's own domain.
 
-Algunas funciones opcionales usan servicios externos de terceros: la consulta de información de conexión (IP, geolocalización) usa [ipapi.co](https://ipapi.co) por HTTPS, y el traductor integrado usa la API de Google Translate.
+Some optional features use third-party external services: connection info lookup (IP, geolocation) uses [ipapi.co](https://ipapi.co) over HTTPS, and the built-in translator uses the Google Translate API.
 
-## Autor
+## Author
 
-Creado por [David Hernández (Dabo)](https://x.com/daboblog), profesional de la ciberseguridad y la administración de sistemas GNU/Linux.
+Created by [David Hernández (Dabo)](https://x.com/daboblog), cybersecurity professional and GNU/Linux systems administrator.
 
-## Licencia
+## License
 
-[GPL v3](LICENSE) -- Copyleft. Este software es libre y debe seguir siéndolo. Puedes usar, estudiar, modificar y distribuir este código, pero las obras derivadas deben mantener la misma licencia. Porque la libertad del software no se negocia.
+[GPL v3](LICENSE) -- Copyleft. This software is free and must remain so. You can use, study, modify and distribute this code, but derivative works must keep the same license. Because software freedom is non-negotiable.
 
 ---
 
