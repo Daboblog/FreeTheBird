@@ -94,6 +94,7 @@ python3 freethebird.py --no-refresh         # Sin auto-refresco
 python3 freethebird.py --refresh 60         # Refresco cada 60s
 python3 freethebird.py --purge              # Limpiar caché
 python3 freethebird.py --width 1400 --height 900
+python3 freethebird.py --version            # Mostrar versión
 ```
 
 ## Instalación
@@ -111,6 +112,13 @@ git clone https://github.com/daboblog/FreeTheBird.git
 cd FreeTheBird
 python3 freethebird.py
 ```
+
+### Probado en
+
+| Distribución | Python | PyQt6 |
+|---|---|---|
+| Slimbook OS (Ubuntu 24.04) | 3.12.3 | 6.6.1 |
+| Debian 13.3 (Trixie) | 3.13.5 | 6.9.0 |
 
 ### Integración con el escritorio (opcional)
 
@@ -151,6 +159,8 @@ update-desktop-database ~/.local/share/applications/
 ## Nota importante
 
 FreeTheBird bloquea trackers y publicidad de terceros a nivel de red, pero **no puede bloquear los anuncios nativos de X** (tweets promocionados), ya que estos se sirven desde el propio dominio de X.
+
+Algunas funciones opcionales usan servicios externos de terceros: la consulta de información de conexión (IP, geolocalización) usa [ipapi.co](https://ipapi.co) por HTTPS, y el traductor integrado usa la API de Google Translate.
 
 ## Autor
 

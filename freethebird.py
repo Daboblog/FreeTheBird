@@ -56,7 +56,7 @@ from PyQt6.QtSvg import QSvgRenderer
 # =============================================================================
 
 APP_NAME = "FreeTheBird"
-APP_VERSION = "5.0"
+APP_VERSION = "1.1.0"
 APP_AUTHOR = "@daboblog"
 APP_GITHUB = "https://github.com/daboblog/FreeTheBird"
 APP_DESKTOP_NAME = "freethebird"
@@ -556,8 +556,7 @@ class FreeTheBirdWindow(QMainWindow):
     def _fetch_conn_info(self):
         """Fetch detailed connection info (ISP, location) in background thread."""
         try:
-            lang = "es" if self.lang == "es" else "en"
-            url = f"http://ip-api.com/json/{self.current_ip}?lang={lang}"
+            url = f"https://ipapi.co/{self.current_ip}/json/"
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "curl/7.0")
             response = urllib.request.urlopen(req, timeout=8)
@@ -568,19 +567,19 @@ class FreeTheBirdWindow(QMainWindow):
     def _show_connection_info(self):
         """Display connection details dialog (IP, ISP, geolocation)."""
         data = self.conn_info
-        if data:
+        if data and not data.get("error"):
             info = "\n".join([
                 f"{self.t('conn_ip')}: {self.current_ip}\n",
-                f"{self.t('conn_isp')}: {data.get('isp', '--')}",
+                f"{self.t('conn_isp')}: {data.get('org', '--')}",
                 f"{self.t('conn_org')}: {data.get('org', '--')}",
-                f"AS: {data.get('as', '--')}\n",
-                f"{self.t('conn_country')}: {data.get('country', '--')}",
-                f"{self.t('conn_region')}: {data.get('regionName', '--')}",
+                f"AS: {data.get('asn', '--')}\n",
+                f"{self.t('conn_country')}: {data.get('country_name', '--')}",
+                f"{self.t('conn_region')}: {data.get('region', '--')}",
                 f"{self.t('conn_city')}: {data.get('city', '--')}",
-                f"{self.t('conn_zip')}: {data.get('zip', '--')}",
+                f"{self.t('conn_zip')}: {data.get('postal', '--')}",
                 f"{self.t('conn_tz')}: {data.get('timezone', '--')}\n",
-                f"{self.t('conn_lat')}: {data.get('lat', '--')}",
-                f"{self.t('conn_lon')}: {data.get('lon', '--')}",
+                f"{self.t('conn_lat')}: {data.get('latitude', '--')}",
+                f"{self.t('conn_lon')}: {data.get('longitude', '--')}",
             ])
         else:
             info = f"{self.t('conn_ip')}: {self.current_ip}\n\n{self.t('conn_error')}"
@@ -1110,6 +1109,8 @@ def main():
         description=f"{APP_NAME} v{APP_VERSION} — "
                     f"Privacy-first X client for GNU/Linux"
     )
+    parser.add_argument("--version", action="version",
+                        version=f"{APP_NAME} v{APP_VERSION}")
     parser.add_argument("--url", default="https://x.com/home",
                         help="Start URL (default: https://x.com/home)")
     parser.add_argument("--refresh", type=int, default=120,
