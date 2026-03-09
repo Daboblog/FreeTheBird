@@ -2,6 +2,15 @@
   <img src="freethebird_social_preview.png" alt="FreeTheBird — A privacy-first, lightweight X (Twitter) client for GNU/Linux" width="800"/>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Daboblog/FreeTheBird/releases/latest"><img src="https://img.shields.io/github/v/release/Daboblog/FreeTheBird?color=%231da1f2&label=version" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL%20v3-blue" alt="License: GPL v3"></a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-yellow" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/platform-GNU%2FLinux-lightgrey" alt="Platform: GNU/Linux">
+  <img src="https://img.shields.io/badge/trackers%20blocked-51-green" alt="51 trackers blocked">
+  <img src="https://img.shields.io/badge/electron-none-red" alt="No Electron">
+</p>
+
 ---
 
 **[English version (README_EN.md)](README_EN.md)**
