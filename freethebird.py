@@ -80,6 +80,7 @@ DEFAULT_CONFIG = {
     "height": 800,
     "dark_mode": True,
     "lang": "es",
+    "refresh_interval": 120,
 }
 
 # =============================================================================
@@ -488,7 +489,7 @@ class FreeTheBirdWindow(QMainWindow):
         self.cfg = load_config()
         self.lang = self.cfg.get("lang", "es")
         self.dark_mode = self.cfg.get("dark_mode", True)
-        self.refresh_interval = refresh_interval
+        self.refresh_interval = self.cfg.get("refresh_interval", refresh_interval)
         self.auto_refresh_enabled = auto_refresh
         self.app_icon = create_app_icon()
         self.last_title = ""
@@ -735,39 +736,50 @@ class FreeTheBirdWindow(QMainWindow):
         )
 
     def _do_translate(self, text):
-        """Perform translation via Google Translate API and show result."""
+        """Perform translation via Google Translate API in a background thread."""
         if not text or not text.strip():
             return
 
+        self.status_label.setText("...")
+        original = text.strip()[:200]
         target_lang = "es" if self.lang == "es" else "en"
-        try:
-            encoded = urllib.parse.quote(text.strip())
-            url = (
-                "https://translate.googleapis.com/translate_a/single"
-                f"?client=gtx&sl=auto&tl={target_lang}&dt=t&q={encoded}"
-            )
-            req = urllib.request.Request(url)
-            req.add_header("User-Agent", "Mozilla/5.0")
-            data = json.loads(
-                urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
-            )
-            translated = "".join(part[0] for part in data[0] if part[0])
 
-            msg = QMessageBox(self)
-            msg.setWindowTitle(self.t("translate_title"))
-            msg.setText(translated)
-            msg.setInformativeText(
-                f"{self.t('translate_original')}: {text.strip()[:200]}"
-            )
-            if self.dark_mode:
-                msg.setStyleSheet(DARK_DIALOG)
-            msg.exec()
-        except (ssl.SSLError, ssl.CertificateError):
-            self.status_label.setText(self.t("translate_error"))
-            QTimer.singleShot(3000, self._update_status)
-        except Exception:
-            self.status_label.setText(self.t("translate_error"))
-            QTimer.singleShot(3000, self._update_status)
+        def fetch():
+            try:
+                encoded = urllib.parse.quote(original)
+                url = (
+                    "https://translate.googleapis.com/translate_a/single"
+                    f"?client=gtx&sl=auto&tl={target_lang}&dt=t&q={encoded}"
+                )
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent", "Mozilla/5.0")
+                data = json.loads(
+                    urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+                )
+                translated = "".join(part[0] for part in data[0] if part[0])
+                QTimer.singleShot(0, lambda: self._show_translation(translated, original))
+            except (ssl.SSLError, ssl.CertificateError):
+                QTimer.singleShot(0, self._on_translate_error)
+            except Exception:
+                QTimer.singleShot(0, self._on_translate_error)
+
+        threading.Thread(target=fetch, daemon=True).start()
+
+    def _show_translation(self, translated, original):
+        """Display translation result dialog (called from main thread)."""
+        self._update_status()
+        msg = QMessageBox(self)
+        msg.setWindowTitle(self.t("translate_title"))
+        msg.setText(translated)
+        msg.setInformativeText(f"{self.t('translate_original')}: {original}")
+        if self.dark_mode:
+            msg.setStyleSheet(DARK_DIALOG)
+        msg.exec()
+
+    def _on_translate_error(self):
+        """Handle translation error (called from main thread)."""
+        self.status_label.setText(self.t("translate_error"))
+        QTimer.singleShot(3000, self._update_status)
 
     # -------------------------------------------------------------------------
     # PRIVACY INFO — Show blocking stats to the user
@@ -994,6 +1006,7 @@ class FreeTheBirdWindow(QMainWindow):
         Ctrl+H      — Go to Home/Timeline
         Ctrl+M      — Go to Messages
         Ctrl+N      — Go to Notifications
+        Ctrl+T      — Translate selected text
         Ctrl+Q      — Quit application
         F11         — Toggle fullscreen
         Ctrl++/=    — Zoom in
@@ -1009,6 +1022,7 @@ class FreeTheBirdWindow(QMainWindow):
                   lambda: self.browser.setUrl(QUrl("https://x.com/messages")))
         QShortcut(QKeySequence("Ctrl+N"), self,
                   lambda: self.browser.setUrl(QUrl("https://x.com/notifications")))
+        QShortcut(QKeySequence("Ctrl+T"), self, self._translate_selection)
         QShortcut(QKeySequence("F11"), self, self._toggle_fullscreen)
         QShortcut(QKeySequence("Ctrl++"), self, self._zoom_in)
         QShortcut(QKeySequence("Ctrl+="), self, self._zoom_in)
@@ -1108,10 +1122,22 @@ class FreeTheBirdWindow(QMainWindow):
         self.cfg["height"] = self.height()
         self.cfg["dark_mode"] = self.dark_mode
         self.cfg["lang"] = self.lang
+        self.cfg["refresh_interval"] = self.refresh_interval
         save_config(self.cfg)
 
     def closeEvent(self, event):
-        """Override close: minimize to tray instead of quitting."""
+        """Override close: minimize to tray instead of quitting.
+
+        If the user holds Shift while closing, the app quits entirely
+        instead of minimizing to the system tray.
+        """
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            self._save_state()
+            self.tray.hide()
+            event.accept()
+            QApplication.quit()
+            return
         event.ignore()
         self._save_state()
         self.hide()
