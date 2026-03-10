@@ -31,6 +31,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import tempfile
 import threading
 import urllib.request
 import urllib.parse
@@ -56,7 +57,7 @@ from PyQt6.QtSvg import QSvgRenderer
 # =============================================================================
 
 APP_NAME = "FreeTheBird"
-APP_VERSION = "5.0"
+APP_VERSION = "1.2.0"
 APP_AUTHOR = "@daboblog"
 APP_GITHUB = "https://github.com/daboblog/FreeTheBird"
 APP_DESKTOP_NAME = "freethebird"
@@ -65,9 +66,10 @@ CONFIG_PATH = os.path.expanduser("~/.config/freethebird/config.json")
 
 # Paths to purge when QtWebEngine cache becomes corrupted
 PURGE_PATHS = [
-    os.path.expanduser("~/.local/share/QtWebEngine/"),
-    os.path.expanduser("~/.local/share/freethebird/"),
-    os.path.expanduser("~/.cache/QtWebEngine/"),
+    os.path.expanduser("~/.local/share/QtWebEngine"),
+    os.path.expanduser("~/.local/share/freethebird"),
+    os.path.expanduser("~/.cache/QtWebEngine"),
+    os.path.expanduser("~/.config/freethebird"),
 ]
 
 # Default configuration values
@@ -336,17 +338,34 @@ def save_config(cfg):
 # MAINTENANCE — Cache purge for development/troubleshooting
 # =============================================================================
 
-def do_purge():
-    """Remove all QtWebEngine cache and session data.
+def do_purge(verbose=True):
+    """Remove all local state that may keep QtWebEngine/X sessions corrupted."""
+    removed = []
 
-    Useful when the engine cache becomes corrupted after a crash.
-    End users should rarely need this; it's primarily a dev tool.
-    Can be triggered via --purge command line flag.
-    """
     for path in PURGE_PATHS:
         if os.path.exists(path):
-            shutil.rmtree(path)
-            print(f"[purge] Removed: {path}")
+            shutil.rmtree(path, ignore_errors=True)
+            removed.append(path)
+            if verbose:
+                print(f"[purge] Removed: {path}")
+
+    tmp_dir = tempfile.gettempdir()
+    for name in os.listdir(tmp_dir):
+        if "QtWebEngine" in name or "freethebird" in name.lower():
+            path = os.path.join(tmp_dir, name)
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    os.remove(path)
+                removed.append(path)
+                if verbose:
+                    print(f"[purge] Removed temp: {path}")
+            except OSError as e:
+                if verbose:
+                    print(f"[purge] Could not remove {path}: {e}")
+
+    return removed
 
 
 # =============================================================================
@@ -556,8 +575,7 @@ class FreeTheBirdWindow(QMainWindow):
     def _fetch_conn_info(self):
         """Fetch detailed connection info (ISP, location) in background thread."""
         try:
-            lang = "es" if self.lang == "es" else "en"
-            url = f"http://ip-api.com/json/{self.current_ip}?lang={lang}"
+            url = f"https://ipapi.co/{self.current_ip}/json/"
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "curl/7.0")
             response = urllib.request.urlopen(req, timeout=8)
@@ -568,19 +586,18 @@ class FreeTheBirdWindow(QMainWindow):
     def _show_connection_info(self):
         """Display connection details dialog (IP, ISP, geolocation)."""
         data = self.conn_info
-        if data:
+        if data and not data.get("error"):
             info = "\n".join([
                 f"{self.t('conn_ip')}: {self.current_ip}\n",
-                f"{self.t('conn_isp')}: {data.get('isp', '--')}",
-                f"{self.t('conn_org')}: {data.get('org', '--')}",
-                f"AS: {data.get('as', '--')}\n",
-                f"{self.t('conn_country')}: {data.get('country', '--')}",
-                f"{self.t('conn_region')}: {data.get('regionName', '--')}",
+                f"{self.t('conn_isp')}: {data.get('org', '--')}",
+                f"AS: {data.get('asn', '--')}\n",
+                f"{self.t('conn_country')}: {data.get('country_name', '--')}",
+                f"{self.t('conn_region')}: {data.get('region', '--')}",
                 f"{self.t('conn_city')}: {data.get('city', '--')}",
-                f"{self.t('conn_zip')}: {data.get('zip', '--')}",
+                f"{self.t('conn_zip')}: {data.get('postal', '--')}",
                 f"{self.t('conn_tz')}: {data.get('timezone', '--')}\n",
-                f"{self.t('conn_lat')}: {data.get('lat', '--')}",
-                f"{self.t('conn_lon')}: {data.get('lon', '--')}",
+                f"{self.t('conn_lat')}: {data.get('latitude', '--')}",
+                f"{self.t('conn_lon')}: {data.get('longitude', '--')}",
             ])
         else:
             info = f"{self.t('conn_ip')}: {self.current_ip}\n\n{self.t('conn_error')}"
@@ -746,24 +763,14 @@ class FreeTheBirdWindow(QMainWindow):
     # -------------------------------------------------------------------------
 
     def _purge_and_restart(self):
-        """Purge all QtWebEngine data and restart the application.
-
-        This is a development/troubleshooting tool. It kills the current
-        process, removes all cached data, and relaunches the app.
-        """
+        """Purge local app/QtWebEngine state and restart the application."""
         self.tray.hide()
-        pid = os.getpid()
-        argv = " ".join(sys.argv)
-        script = (
-            f"kill -9 {pid} 2>/dev/null; sleep 2; "
-            "rm -rf ~/.local/share/QtWebEngine/ ~/.local/share/freethebird/ "
-            "~/.cache/QtWebEngine/ ~/.config/freethebird/; "
-            "find /tmp -name '*QtWebEngine*' -exec rm -rf '{}' + 2>/dev/null; "
-            "find /tmp -name '*freethebird*' -exec rm -rf '{}' + 2>/dev/null; "
-            f"python3 {argv}"
-        )
-        subprocess.Popen(["bash", "-c", script])
-        sys.exit(0)
+        do_purge()
+
+        python = sys.executable
+        args = [python] + sys.argv
+        subprocess.Popen(args)
+        QApplication.quit()
 
     # -------------------------------------------------------------------------
     # MENUBAR — Top menu with all app features
@@ -1110,6 +1117,8 @@ def main():
         description=f"{APP_NAME} v{APP_VERSION} — "
                     f"Privacy-first X client for GNU/Linux"
     )
+    parser.add_argument("--version", action="version",
+                        version=f"{APP_NAME} v{APP_VERSION}")
     parser.add_argument("--url", default="https://x.com/home",
                         help="Start URL (default: https://x.com/home)")
     parser.add_argument("--refresh", type=int, default=120,
