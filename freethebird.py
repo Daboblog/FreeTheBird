@@ -595,20 +595,56 @@ class FreeTheBirdWindow(QMainWindow):
     def _fetch_conn_info(self):
         """Fetch detailed connection info (ISP, location) in background thread.
 
+        Tries ipapi.co first, falls back to ip-api.com if it fails.
+        Normalizes the response to a common format so _show_connection_info()
+        works regardless of which service responded.
+
         Uses QTimer.singleShot(0) to safely update self.conn_info from
         the main thread, avoiding race conditions with _show_connection_info().
         """
-        try:
-            url = f"https://ipapi.co/{self.current_ip}/json/"
-            req = urllib.request.Request(url)
-            req.add_header("User-Agent", "curl/7.0")
-            response = urllib.request.urlopen(req, timeout=8)
-            data = json.loads(response.read().decode("utf-8"))
-            QTimer.singleShot(0, lambda: setattr(self, "conn_info", data))
-        except (ssl.SSLError, ssl.CertificateError):
-            QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
-        except Exception:
-            QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
+        services = [
+            (f"https://ipapi.co/{self.current_ip}/json/", self._normalize_ipapi_co),
+            (f"http://ip-api.com/json/{self.current_ip}", self._normalize_ip_api_com),
+        ]
+        for url, normalize in services:
+            try:
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent", "curl/7.0")
+                response = urllib.request.urlopen(req, timeout=8)
+                raw = json.loads(response.read().decode("utf-8"))
+                data = normalize(raw)
+                if data:
+                    QTimer.singleShot(0, lambda d=data: setattr(self, "conn_info", d))
+                    return
+            except (ssl.SSLError, ssl.CertificateError):
+                continue
+            except Exception:
+                continue
+        QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
+
+    @staticmethod
+    def _normalize_ipapi_co(raw):
+        """Normalize ipapi.co response to common format."""
+        if raw.get("error"):
+            return None
+        return raw
+
+    @staticmethod
+    def _normalize_ip_api_com(raw):
+        """Normalize ip-api.com response to common format (ipapi.co keys)."""
+        if raw.get("status") != "success":
+            return None
+        return {
+            "org": raw.get("isp", "--"),
+            "asn": raw.get("as", "--"),
+            "country_name": raw.get("country", "--"),
+            "region": raw.get("regionName", "--"),
+            "city": raw.get("city", "--"),
+            "postal": raw.get("zip", "--"),
+            "timezone": raw.get("timezone", "--"),
+            "latitude": raw.get("lat", "--"),
+            "longitude": raw.get("lon", "--"),
+        }
 
     def _update_ip_menu(self):
         """Update the IP menu title from the main thread."""
