@@ -399,8 +399,9 @@ class AdBlockInterceptor(QWebEngineUrlRequestInterceptor):
 
     def interceptRequest(self, info):
         host = info.requestUrl().host().lower()
-        for domain in AD_DOMAINS:
-            if host == domain or host.endswith("." + domain):
+        parts = host.split(".")
+        for i in range(len(parts)):
+            if ".".join(parts[i:]) in AD_DOMAINS:
                 info.block(True)
                 AdBlockInterceptor.blocked_count += 1
                 return
@@ -516,9 +517,6 @@ class FreeTheBirdWindow(QMainWindow):
         if saved_zoom != 1.0:
             self.browser.setZoomFactor(saved_zoom)
 
-        # -- Fetch public IP (sync, before building menus) --
-        self._fetch_ip_sync()
-
         # -- Build UI components --
         self._create_menubar()
         self._create_toolbar()
@@ -535,8 +533,8 @@ class FreeTheBirdWindow(QMainWindow):
         self._apply_theme()
         self._update_status()
 
-        # -- Fetch detailed connection info in background --
-        threading.Thread(target=self._fetch_conn_info, daemon=True).start()
+        # -- Fetch public IP and connection info in background --
+        threading.Thread(target=self._fetch_ip_and_conn_info, daemon=True).start()
 
     # -------------------------------------------------------------------------
     # INTERNATIONALISATION
@@ -550,11 +548,11 @@ class FreeTheBirdWindow(QMainWindow):
     # NETWORK — IP & connection info
     # -------------------------------------------------------------------------
 
-    def _fetch_ip_sync(self):
-        """Fetch public IP address synchronously at startup.
+    def _fetch_ip_and_conn_info(self):
+        """Fetch public IP and connection info in a background thread.
 
-        Tries multiple services for reliability. Called before building
-        menus so the IP is visible immediately.
+        Updates the IP menu text once the IP is resolved, then fetches
+        detailed connection info (ISP, geolocation).
         """
         services = [
             "https://api.ipify.org",
@@ -568,25 +566,31 @@ class FreeTheBirdWindow(QMainWindow):
                 ip = urllib.request.urlopen(req, timeout=3).read().decode("utf-8").strip()
                 if ip and len(ip) < 46:  # Valid IPv4 or IPv6
                     self.current_ip = ip
-                    return
+                    QTimer.singleShot(0, self._update_ip_menu)
+                    break
             except (ssl.SSLError, ssl.CertificateError):
                 continue
             except Exception:
                 continue
-        self.current_ip = "--"
+        else:
+            self.current_ip = "--"
+            QTimer.singleShot(0, self._update_ip_menu)
 
-    def _fetch_conn_info(self):
-        """Fetch detailed connection info (ISP, location) in background thread."""
-        try:
-            url = f"https://ipapi.co/{self.current_ip}/json/"
-            req = urllib.request.Request(url)
-            req.add_header("User-Agent", "curl/7.0")
-            response = urllib.request.urlopen(req, timeout=8)
-            self.conn_info = json.loads(response.read().decode("utf-8"))
-        except (ssl.SSLError, ssl.CertificateError):
-            self.conn_info = None
-        except Exception:
-            self.conn_info = None
+        if self.current_ip != "--":
+            try:
+                url = f"https://ipapi.co/{self.current_ip}/json/"
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent", "curl/7.0")
+                response = urllib.request.urlopen(req, timeout=8)
+                self.conn_info = json.loads(response.read().decode("utf-8"))
+            except (ssl.SSLError, ssl.CertificateError):
+                self.conn_info = None
+            except Exception:
+                self.conn_info = None
+
+    def _update_ip_menu(self):
+        """Update the IP menu title from the main thread."""
+        self.ip_menu.setTitle(f"\U0001f310 IP: {self.current_ip}")
 
     def _show_connection_info(self):
         """Display connection details dialog (IP, ISP, geolocation)."""
@@ -1100,9 +1104,13 @@ class FreeTheBirdWindow(QMainWindow):
         )
 
     def resizeEvent(self, event):
-        """Save window dimensions when resized."""
+        """Save window dimensions when resized (debounced to avoid excessive disk writes)."""
         super().resizeEvent(event)
-        self._save_state()
+        if not hasattr(self, "_resize_timer"):
+            self._resize_timer = QTimer(self)
+            self._resize_timer.setSingleShot(True)
+            self._resize_timer.timeout.connect(self._save_state)
+        self._resize_timer.start(500)
 
 
 # =============================================================================
