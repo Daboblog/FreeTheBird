@@ -4,7 +4,7 @@
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║  FreeTheBird — A privacy-first, lightweight X (Twitter) client for GNU/Linux ║
 ║                                                                               ║
-║  Version:    5.0                                                              ║
+║  Version:    1.1.0                                                            ║
 ║  License:    GPL v3 (GNU General Public License)                              ║
 ║  Author:     David Hernández (@daboblog)                                      ║
 ║  Website:    https://davidhernandez.es | https://daboblog.com                 ║
@@ -329,10 +329,13 @@ def load_config():
 
 
 def save_config(cfg):
-    """Persist configuration to disk."""
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
+    """Persist configuration to disk. Silently fails on I/O errors."""
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except OSError:
+        pass
 
 
 # =============================================================================
@@ -395,14 +398,17 @@ class AdBlockInterceptor(QWebEngineUrlRequestInterceptor):
     It cannot block native X ads (promoted tweets) because those are served
     from X's own domain (x.com).
     """
-    blocked_count = 0
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.blocked_count = 0
 
     def interceptRequest(self, info):
         host = info.requestUrl().host().lower()
         for domain in AD_DOMAINS:
             if host == domain or host.endswith("." + domain):
                 info.block(True)
-                AdBlockInterceptor.blocked_count += 1
+                self.blocked_count += 1
                 return
 
 
@@ -576,17 +582,22 @@ class FreeTheBirdWindow(QMainWindow):
         self.current_ip = "--"
 
     def _fetch_conn_info(self):
-        """Fetch detailed connection info (ISP, location) in background thread."""
+        """Fetch detailed connection info (ISP, location) in background thread.
+
+        Uses QTimer.singleShot(0) to safely update self.conn_info from
+        the main thread, avoiding race conditions with _show_connection_info().
+        """
         try:
             url = f"https://ipapi.co/{self.current_ip}/json/"
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "curl/7.0")
             response = urllib.request.urlopen(req, timeout=8)
-            self.conn_info = json.loads(response.read().decode("utf-8"))
+            data = json.loads(response.read().decode("utf-8"))
+            QTimer.singleShot(0, lambda: setattr(self, "conn_info", data))
         except (ssl.SSLError, ssl.CertificateError):
-            self.conn_info = None
+            QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
         except Exception:
-            self.conn_info = None
+            QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
 
     def _show_connection_info(self):
         """Display connection details dialog (IP, ISP, geolocation)."""
@@ -757,7 +768,7 @@ class FreeTheBirdWindow(QMainWindow):
         info = self.t("privacy_body").format(
             app=APP_NAME,
             count=len(AD_DOMAINS),
-            blocked=AdBlockInterceptor.blocked_count,
+            blocked=self.ad_interceptor.blocked_count,
         )
         msg = QMessageBox(self)
         msg.setWindowTitle(self.t("privacy_title"))
