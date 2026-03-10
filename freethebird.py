@@ -44,7 +44,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSystemTrayIcon, QMenu,
-    QMessageBox, QToolBar, QLabel, QSpinBox,
+    QMessageBox, QToolBar, QLabel, QSpinBox, QLineEdit,
     QWidgetAction, QHBoxLayout, QWidget,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -147,6 +147,7 @@ STRINGS = {
         "conn_lat": "Latitud",
         "conn_lon": "Longitud",
         "conn_error": "No se pudo obtener informaci\u00f3n adicional.",
+        "loading": "Cargando...",
     },
     "en": {
         "home": "Home",
@@ -200,6 +201,7 @@ STRINGS = {
         "conn_lat": "Latitude",
         "conn_lon": "Longitude",
         "conn_error": "Could not retrieve additional information.",
+        "loading": "Loading...",
     },
 }
 
@@ -510,6 +512,8 @@ class FreeTheBirdWindow(QMainWindow):
         self.browser.setUrl(QUrl(url))
         self.setCentralWidget(self.browser)
         self.browser.titleChanged.connect(self._on_title_changed)
+        self.browser.loadStarted.connect(self._on_load_started)
+        self.browser.loadFinished.connect(self._on_load_finished)
 
         # -- Restore saved zoom level --
         saved_zoom = self.cfg.get("zoom", 1.0)
@@ -636,6 +640,18 @@ class FreeTheBirdWindow(QMainWindow):
                         QSystemTrayIcon.MessageIcon.Information, 5000,
                     )
         self.last_title = title
+
+    # -------------------------------------------------------------------------
+    # LOADING INDICATOR — Visual feedback during page load
+    # -------------------------------------------------------------------------
+
+    def _on_load_started(self):
+        """Show loading indicator in the status bar."""
+        self.status_label.setText(self.t("loading"))
+
+    def _on_load_finished(self, ok):
+        """Clear loading indicator when page finishes loading."""
+        self._update_status()
 
     # -------------------------------------------------------------------------
     # THEME — Dark/light mode switching
@@ -932,6 +948,44 @@ class FreeTheBirdWindow(QMainWindow):
         self.status_label.setStyleSheet("padding: 0 8px; color: #888;")
         tb.addWidget(self.status_label)
 
+        # Find bar (hidden by default, toggled with Ctrl+F)
+        self.find_separator = tb.addSeparator()
+        self.find_input = QLineEdit()
+        self.find_input.setPlaceholderText("Ctrl+F")
+        self.find_input.setMaximumWidth(200)
+        self.find_input.textChanged.connect(self._find_in_page)
+        self.find_input_action = tb.addWidget(self.find_input)
+        self.find_separator.setVisible(False)
+        self.find_input.setVisible(False)
+
+    # -------------------------------------------------------------------------
+    # FIND IN PAGE — Search text within the current page
+    # -------------------------------------------------------------------------
+
+    def _toggle_find_bar(self):
+        """Show or hide the find bar and focus the input."""
+        visible = not self.find_input.isVisible()
+        self.find_separator.setVisible(visible)
+        self.find_input.setVisible(visible)
+        if visible:
+            self.find_input.setFocus()
+            self.find_input.selectAll()
+        else:
+            self.find_input.clear()
+            self.browser.findText("")
+
+    def _close_find_bar(self):
+        """Hide the find bar and clear search highlights."""
+        if self.find_input.isVisible():
+            self.find_separator.setVisible(False)
+            self.find_input.setVisible(False)
+            self.find_input.clear()
+            self.browser.findText("")
+
+    def _find_in_page(self, text):
+        """Search for text in the current page."""
+        self.browser.findText(text)
+
     # -------------------------------------------------------------------------
     # SYSTEM TRAY — Minimize to tray, notifications
     # -------------------------------------------------------------------------
@@ -973,11 +1027,13 @@ class FreeTheBirdWindow(QMainWindow):
         Ctrl+H      — Go to Home/Timeline
         Ctrl+M      — Go to Messages
         Ctrl+N      — Go to Notifications
+        Ctrl+F      — Find in page
         Ctrl+Q      — Quit application
         F11         — Toggle fullscreen
         Ctrl++/=    — Zoom in
         Ctrl+-      — Zoom out
         Ctrl+0      — Reset zoom to 100%
+        Escape      — Close find bar
         """
         QShortcut(QKeySequence("F5"), self, self._do_refresh)
         QShortcut(QKeySequence("Ctrl+R"), self, self._toggle_auto_refresh)
@@ -988,11 +1044,13 @@ class FreeTheBirdWindow(QMainWindow):
                   lambda: self.browser.setUrl(QUrl("https://x.com/messages")))
         QShortcut(QKeySequence("Ctrl+N"), self,
                   lambda: self.browser.setUrl(QUrl("https://x.com/notifications")))
+        QShortcut(QKeySequence("Ctrl+F"), self, self._toggle_find_bar)
         QShortcut(QKeySequence("F11"), self, self._toggle_fullscreen)
         QShortcut(QKeySequence("Ctrl++"), self, self._zoom_in)
         QShortcut(QKeySequence("Ctrl+="), self, self._zoom_in)
         QShortcut(QKeySequence("Ctrl+-"), self, self._zoom_out)
         QShortcut(QKeySequence("Ctrl+0"), self, self._zoom_reset)
+        QShortcut(QKeySequence("Escape"), self, self._close_find_bar)
 
     # -------------------------------------------------------------------------
     # ACTIONS — Refresh, zoom, auto-refresh, visibility
