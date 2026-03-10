@@ -58,7 +58,7 @@ from PyQt6.QtSvg import QSvgRenderer
 # =============================================================================
 
 APP_NAME = "FreeTheBird"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 APP_AUTHOR = "@daboblog"
 APP_GITHUB = "https://github.com/daboblog/FreeTheBird"
 APP_DESKTOP_NAME = "freethebird"
