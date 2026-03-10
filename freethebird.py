@@ -321,11 +321,20 @@ DARK_DIALOG = "QLabel { color: #e0e0e0; } QMessageBox { background: #1a1a2e; }"
 # =============================================================================
 
 def load_config():
-    """Load configuration from disk, falling back to defaults."""
+    """Load configuration from disk, falling back to defaults.
+
+    Only accepts keys present in DEFAULT_CONFIG and validates that
+    each value matches the expected type. Malformed or unexpected
+    entries are silently discarded.
+    """
     cfg = DEFAULT_CONFIG.copy()
     try:
         with open(CONFIG_PATH, "r") as f:
-            cfg.update(json.load(f))
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for key, default_val in DEFAULT_CONFIG.items():
+                if key in raw and isinstance(raw[key], type(default_val)):
+                    cfg[key] = raw[key]
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     return cfg
@@ -437,17 +446,15 @@ class FreeTheBirdPage(QWebEnginePage):
         if host in ALLOWED_HOSTS:
             return True
 
-        # Allow authentication providers for login flows
+        # Allow authentication providers for login flows (exact match)
         for auth_host in AUTH_HOSTS:
-            if auth_host in host:
+            if host == auth_host or host.endswith("." + auth_host):
                 return True
 
-        # External links → open in system browser
+        # Non-whitelisted domains: open links in system browser, block the rest
         if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
             QDesktopServices.openUrl(url)
-            return False
-
-        return True
+        return False
 
     def createWindow(self, window_type):
         """Handle pop-up windows by redirecting them to the system browser."""
@@ -603,10 +610,11 @@ class FreeTheBirdWindow(QMainWindow):
         Uses QTimer.singleShot(0) to safely update self.conn_info from
         the main thread, avoiding race conditions with _show_connection_info().
         """
+        safe_ip = urllib.parse.quote(self.current_ip, safe="")
         services = [
-            (f"https://ipwho.is/{self.current_ip}", self._normalize_ipwho_is),
-            (f"https://ipapi.co/{self.current_ip}/json/", self._normalize_ipapi_co),
-            (f"http://ip-api.com/json/{self.current_ip}", self._normalize_ip_api_com),
+            (f"https://ipwho.is/{safe_ip}", self._normalize_ipwho_is),
+            (f"https://ipapi.co/{safe_ip}/json/", self._normalize_ipapi_co),
+            (f"http://ip-api.com/json/{safe_ip}", self._normalize_ip_api_com),
         ]
         for url, normalize in services:
             try:
