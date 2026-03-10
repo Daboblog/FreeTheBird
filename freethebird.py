@@ -595,14 +595,16 @@ class FreeTheBirdWindow(QMainWindow):
     def _fetch_conn_info(self):
         """Fetch detailed connection info (ISP, location) in background thread.
 
-        Tries ipapi.co first, falls back to ip-api.com if it fails.
-        Normalizes the response to a common format so _show_connection_info()
+        Tries ipwho.is first (HTTPS, no API key), then ipapi.co,
+        then ip-api.com (HTTP only) as last resort.
+        Normalizes all responses to a common format so _show_connection_info()
         works regardless of which service responded.
 
         Uses QTimer.singleShot(0) to safely update self.conn_info from
         the main thread, avoiding race conditions with _show_connection_info().
         """
         services = [
+            (f"https://ipwho.is/{self.current_ip}", self._normalize_ipwho_is),
             (f"https://ipapi.co/{self.current_ip}/json/", self._normalize_ipapi_co),
             (f"http://ip-api.com/json/{self.current_ip}", self._normalize_ip_api_com),
         ]
@@ -621,6 +623,24 @@ class FreeTheBirdWindow(QMainWindow):
             except Exception:
                 continue
         QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
+
+    @staticmethod
+    def _normalize_ipwho_is(raw):
+        """Normalize ipwho.is response to common format (ipapi.co keys)."""
+        if not raw.get("success"):
+            return None
+        conn = raw.get("connection", {})
+        return {
+            "org": conn.get("isp") or conn.get("org") or "--",
+            "asn": f"AS{conn.get('asn', '--')}",
+            "country_name": raw.get("country", "--"),
+            "region": raw.get("region", "--"),
+            "city": raw.get("city", "--"),
+            "postal": raw.get("postal", "--"),
+            "timezone": raw.get("timezone", {}).get("id", "--"),
+            "latitude": raw.get("latitude", "--"),
+            "longitude": raw.get("longitude", "--"),
+        }
 
     @staticmethod
     def _normalize_ipapi_co(raw):
