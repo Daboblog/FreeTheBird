@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import ssl
 import urllib.request
 import urllib.parse
 
@@ -495,7 +496,7 @@ class FreeTheBirdWindow(QMainWindow):
         self.profile = QWebEngineProfile(APP_DESKTOP_NAME, self)
         self.profile.setHttpUserAgent(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
 
         # -- Privacy: attach ad/tracker interceptor --
@@ -568,6 +569,8 @@ class FreeTheBirdWindow(QMainWindow):
                 if ip and len(ip) < 46:  # Valid IPv4 or IPv6
                     self.current_ip = ip
                     return
+            except (ssl.SSLError, ssl.CertificateError):
+                continue
             except Exception:
                 continue
         self.current_ip = "--"
@@ -580,6 +583,8 @@ class FreeTheBirdWindow(QMainWindow):
             req.add_header("User-Agent", "curl/7.0")
             response = urllib.request.urlopen(req, timeout=8)
             self.conn_info = json.loads(response.read().decode("utf-8"))
+        except (ssl.SSLError, ssl.CertificateError):
+            self.conn_info = None
         except Exception:
             self.conn_info = None
 
@@ -736,6 +741,9 @@ class FreeTheBirdWindow(QMainWindow):
             if self.dark_mode:
                 msg.setStyleSheet(DARK_DIALOG)
             msg.exec()
+        except (ssl.SSLError, ssl.CertificateError):
+            self.status_label.setText(self.t("translate_error"))
+            QTimer.singleShot(3000, self._update_status)
         except Exception:
             self.status_label.setText(self.t("translate_error"))
             QTimer.singleShot(3000, self._update_status)
@@ -771,6 +779,7 @@ class FreeTheBirdWindow(QMainWindow):
         args = [python] + sys.argv
         subprocess.Popen(args)
         QApplication.quit()
+
 
     # -------------------------------------------------------------------------
     # MENUBAR — Top menu with all app features
