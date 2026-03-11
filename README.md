@@ -13,7 +13,7 @@
 
 ---
 
-**[Versión en Español (README_ES.md)](README_ES.md)**
+**[Versión en Español (README.md)](README.md)**
 
 ## Why FreeTheBird exists
 
@@ -174,6 +174,11 @@ Some optional features use third-party external services: connection info lookup
 ## Author
 
 Created by [David Hernández (Dabo)](https://x.com/daboblog), cybersecurity professional and GNU/Linux systems administrator.
+
+## Contributors
+
+- [oreixa](https://github.com/oreixa) — Security, performance, architecture and UX improvements (PRs #1–#8)
+- [Claude](https://claude.ai) by Anthropic — Code security review, architecture guidance and documentation
 
 ## License
 
