@@ -1,3 +1,4 @@
+# === Python ===
 __pycache__/
 *.pyc
 *.pyo
@@ -5,9 +6,32 @@ __pycache__/
 .eggs/
 dist/
 build/
+
+# === Editor/IDE artifacts ===
 *.swp
 *.swo
 *~
 .vscode/
 .idea/
+*.kate-swp
+
+# === AI tooling ===
 CLAUDE.md
+
+# === OS artifacts ===
+.DS_Store
+Thumbs.db
+.directory
+
+# === Security/pentesting leftovers ===
+*.pcap
+*.cap
+*.hccapx
+*.pot
+*.hash
+*.log
+core
+core.*
+
+# === Project internal ===
+FreeTheBird_PROJECT_BRIEFING.md
