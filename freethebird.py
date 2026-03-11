@@ -624,13 +624,13 @@ class FreeTheBirdWindow(QMainWindow):
                 raw = json.loads(response.read().decode("utf-8"))
                 data = normalize(raw)
                 if data:
-                    QTimer.singleShot(0, lambda d=data: setattr(self, "conn_info", d))
+                    self.conn_info = data
                     return
             except (ssl.SSLError, ssl.CertificateError):
                 continue
             except Exception:
                 continue
-        QTimer.singleShot(0, lambda: setattr(self, "conn_info", None))
+        self.conn_info = None
 
     @staticmethod
     def _normalize_ipwho_is(raw):
