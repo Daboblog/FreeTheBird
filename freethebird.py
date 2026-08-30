@@ -26,6 +26,7 @@
 
 import sys
 import os
+import re
 import signal
 import argparse
 import json
@@ -37,19 +38,22 @@ import ssl
 import urllib.request
 import urllib.parse
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, QSize, QByteArray
+from PyQt6.QtCore import Qt, QTimer, QUrl, QSize, QByteArray, QDateTime
 from PyQt6.QtGui import (
     QIcon, QAction, QPixmap, QPainter, QColor,
     QShortcut, QKeySequence, QDesktopServices,
 )
+from PyQt6.QtNetwork import QNetworkCookie
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSystemTrayIcon, QMenu,
     QMessageBox, QToolBar, QLabel, QSpinBox, QLineEdit,
-    QWidgetAction, QHBoxLayout, QWidget,
+    QWidgetAction, QHBoxLayout, QWidget, QDialog, QTextEdit,
+    QVBoxLayout, QPushButton, QDialogButtonBox, QFileDialog,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import (
     QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor,
+    QWebEngineScript, QWebEngineSettings,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -81,6 +85,8 @@ DEFAULT_CONFIG = {
     "dark_mode": True,
     "lang": "es",
     "refresh_interval": 120,
+    "tray_enabled": True,
+    "sponsor_block": True,
 }
 
 # =============================================================================
@@ -132,6 +138,11 @@ STRINGS = {
         "translate_title": "Traducci\u00f3n",
         "translate_original": "Original",
         "translate_error": "Error al traducir",
+        # Tray
+        "tray_toggle": "Minimizar a bandeja",
+        "tray_enabled": "Bandeja: ON",
+        "tray_disabled": "Bandeja: OFF",
+        "sponsor_block": "Bloquear patrocinados",
         # Language switcher
         "switch_to": "Cambiar a English",
         # Connection info
@@ -149,6 +160,22 @@ STRINGS = {
         "conn_lon": "Longitud",
         "conn_error": "No se pudo obtener informaci\u00f3n adicional.",
         "loading": "Cargando...",
+        "session_menu": "Sesi\u00f3n",
+        "import_session": "Importar sesi\u00f3n de X",
+        "import_title": "Importar sesi\u00f3n",
+        "import_instructions": (
+            "X bloquea el login dentro de navegadores embebidos.\n"
+            "Soluci\u00f3n fiable: inicia sesi\u00f3n en Chrome/Edge real y pega las cookies aqu\u00ed.\n\n"
+            "En tu navegador real:\n"
+            "1) Entra a https://x.com y logu\u00e9ate (ah\u00ed s\u00ed funciona)\n"
+            "2) Pulsa F12 > Application > Cookies > https://x.com\n"
+            "3) Copia auth_token y ct0 (o todas las cookies como 'auth_token=...; ct0=...')\n"
+            "4) P\u00e9galas abajo y pulsa Importar. Tambi\u00e9n acepta JSON o cookies.txt\n\n"
+            "Pega aqu\u00ed:"
+        ),
+        "import_ok": "Sesi\u00f3n importada. Recargando...",
+        "import_fail": "No se detectaron cookies v\u00e1lidas. Pega 'auth_token=...; ct0=...' o JSON o cookies.txt",
+        "open_browser_login": "Abrir login en navegador real",
     },
     "en": {
         "home": "Home",
@@ -189,6 +216,10 @@ STRINGS = {
         "translate_original": "Original",
         "translate_error": "Translation error",
         "switch_to": "Cambiar a Espanol",
+        "tray_toggle": "Minimize to tray",
+        "tray_enabled": "Tray: ON",
+        "tray_disabled": "Tray: OFF",
+        "sponsor_block": "Block sponsors",
         "conn_details": "View connection details",
         "conn_title": "Connection",
         "conn_ip": "Public IP",
@@ -203,6 +234,22 @@ STRINGS = {
         "conn_lon": "Longitude",
         "conn_error": "Could not retrieve additional information.",
         "loading": "Loading...",
+        "session_menu": "Session",
+        "import_session": "Import X session",
+        "import_title": "Import session",
+        "import_instructions": (
+            "X blocks login inside embedded browsers.\n"
+            "Reliable workaround: log in on real Chrome/Edge and paste cookies here.\n\n"
+            "In your real browser:\n"
+            "1) Go to https://x.com and log in (works there)\n"
+            "2) Press F12 > Application > Cookies > https://x.com\n"
+            "3) Copy auth_token and ct0 (or all cookies as 'auth_token=...; ct0=...')\n"
+            "4) Paste below and click Import. Also accepts JSON or cookies.txt\n\n"
+            "Paste here:"
+        ),
+        "import_ok": "Session imported. Reloading...",
+        "import_fail": "No valid cookies detected. Paste 'auth_token=...; ct0=...' or JSON or cookies.txt",
+        "open_browser_login": "Open login in system browser",
     },
 }
 
@@ -247,7 +294,33 @@ AD_DOMAINS = {
 ALLOWED_HOSTS = {
     "x.com", "twitter.com", "www.x.com", "www.twitter.com",
     "mobile.x.com", "mobile.twitter.com",
-    "abs.twimg.com", "pbs.twimg.com", "video.twimg.com", "t.co",
+    "api.x.com", "api.twitter.com",
+    "capi.x.com", "capi.twitter.com",
+    "internal-api.x.com", "internal-api.twitter.com",
+    "i.x.com", "i.twitter.com",
+    "upload.twitter.com",
+    # twimg media CDNs — X videos/thumbnails/GIFs use many subdomains
+    "twimg.com", "abs.twimg.com", "pbs.twimg.com", "video.twimg.com",
+    "ton.twimg.com", "cdn.syndication.twimg.com", "syndication.twimg.com",
+    "t.co",
+    # HLS.js CDN for m3u8 fallback (X serves m3u8, not mp4)
+    "cdn.jsdelivr.net", "jsdelivr.net",
+    # Local ffmpeg stream server (decoded video is served back to the page)
+    "127.0.0.1", "localhost",
+    # Verification providers required for login (ArkoseLabs + reCAPTCHA)
+    "client-api.arkoselabs.com", "api.arkoselabs.com", "arkoselabs.com",
+    "funcaptcha.com", "api.funcaptcha.com",
+    "recaptcha.net", "www.recaptcha.net",
+    "www.gstatic.com", "www.google.com", "apis.google.com",
+}
+
+# Verification hosts that must stay inside the app (not opened in system browser)
+# Used by createWindow to avoid breaking Arkose/reCAPTCHA challenges
+VERIFICATION_HOSTS = {
+    "client-api.arkoselabs.com", "api.arkoselabs.com", "arkoselabs.com",
+    "funcaptcha.com", "api.funcaptcha.com",
+    "recaptcha.net", "www.recaptcha.net",
+    "www.gstatic.com", "www.google.com", "apis.google.com",
 }
 
 # Authentication providers allowed to load inside the app
@@ -314,6 +387,145 @@ LIGHT_STYLE = (
 
 # Dialog style for dark mode message boxes
 DARK_DIALOG = "QLabel { color: #e0e0e0; } QMessageBox { background: #1a1a2e; }"
+
+# Fingerprint hardening — run in MainWorld at DocumentCreation so page JS
+# sees a real-Chrome-like navigator/window.chrome. QtWebEngine otherwise
+# exposes webdriver/plugins gaps that X's ArkoseLabs check flags as bot.
+# Also patches media APIs so QtWebEngine's H.264/AAC support is advertised
+# correctly — without this X's player picks a codec Qt cannot decode and
+# shows "The media could not be played".
+FINGERPRINT_JS = r"""
+(function() {
+  try { Object.defineProperty(navigator, 'webdriver', {get: () => false, configurable: true}); } catch(e) {}
+  try {
+    const fakePlugins = [
+      {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+      {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+      {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''},
+    ];
+    Object.defineProperty(navigator, 'plugins', {get: () => {
+      const arr = fakePlugins.slice();
+      arr.item = function(i){ return this[i] || null; };
+      arr.namedItem = function(n){ return this.find(p=>p.name===n) || null; };
+      arr.refresh = function(){};
+      return arr;
+    }, configurable: true});
+  } catch(e) {}
+  try { Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en'], configurable: true}); } catch(e) {}
+  try { Object.defineProperty(navigator, 'platform', {get: () => 'Win32', configurable: true}); } catch(e) {}
+  try { Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.', configurable: true}); } catch(e) {}
+  try { Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8, configurable: true}); } catch(e) {}
+  try { Object.defineProperty(navigator, 'deviceMemory', {get: () => 8, configurable: true}); } catch(e) {}
+  try {
+    if (!window.chrome) window.chrome = {};
+    if (!window.chrome.runtime) window.chrome.runtime = {};
+    if (!window.chrome.loadTimes) window.chrome.loadTimes = function(){};
+    if (!window.chrome.csi) window.chrome.csi = function(){};
+  } catch(e) {}
+  try {
+    const origQuery = navigator.permissions && navigator.permissions.query;
+    if (origQuery) {
+      navigator.permissions.query = function(p){ return origQuery.call(this, p).catch(()=>({state:'granted', onchange:null})); };
+    }
+  } catch(e) {}
+})();
+"""
+
+# Lightweight sponsor block — hides "Promoted by" trends and sponsored posts.
+# Efficient: MutationObserver on added nodes only + exact markers so body text
+# containing the word "promoted" is never hidden. Toggleable via window._ftbSponsorBlockEnabled.
+SPONSOR_BLOCK_JS = r"""
+(function(){
+  window._ftbSponsorBlockEnabled = true;
+  // exact markers — avoids hiding normal tweets that mention "promoted"
+  function isSponsoredTrend(el){
+    // X's promoted trend has a small line that starts with "Promoted by "
+    // It's a distinct span/div, not the title. Check direct text.
+    try{
+      var spans = el.querySelectorAll('span, div');
+      for(var i=0;i<spans.length;i++){
+        var t = (spans[i].textContent||'').trim();
+        if(/^Promoted by\s+/i.test(t)) return true;
+      }
+      // fallback: aria
+      if(el.querySelector('[aria-label*="Promoted"]')) return true;
+    }catch(e){}
+    return false;
+  }
+  function isSponsoredPost(article){
+    try{
+      // definitive marker X uses for ads
+      if(article.querySelector('[data-testid="placementTracking"]')) return true;
+      if(article.querySelector('[aria-label*="Promoted"]')) return true;
+      // exact label spans (not tweetText)
+      var spans = article.querySelectorAll('span, div');
+      for(var i=0;i<spans.length;i++){
+        var c = spans[i];
+        var t = (c.textContent||'').trim();
+        if(/^Promoted by\s+/i.test(t)) return true;
+        if(t === 'Promoted' && c.childElementCount === 0){
+          if(!c.closest('[data-testid="tweetText"]')) return true;
+        }
+      }
+    }catch(e){}
+    return false;
+  }
+  function hide(el){
+    if(!window._ftbSponsorBlockEnabled) return;
+    if(!el || el.dataset.ftbHidden) return;
+    el.dataset.ftbHidden = '1';
+    el.style.display = 'none';
+  }
+  function unhideAll(){
+    document.querySelectorAll('[data-ftb-hidden]').forEach(function(el){
+      el.style.display = '';
+      delete el.dataset.ftbHidden;
+    });
+  }
+  window._ftbSponsorUnhide = unhideAll;
+  function scan(root){
+    if(!window._ftbSponsorBlockEnabled) return;
+    if(!root || !root.querySelectorAll) return;
+    // trends: each [data-testid="trend"]
+    var trends = root.matches && root.matches('[data-testid="trend"]') ? [root] : [];
+    var q1 = root.querySelectorAll('[data-testid="trend"]');
+    for(var i=0;i<q1.length;i++) trends.push(q1[i]);
+    for(var i=0;i<trends.length;i++){
+      var tr = trends[i];
+      if(tr.dataset.ftbHidden) continue;
+      if(isSponsoredTrend(tr)) hide(tr);
+    }
+    // posts: article
+    var arts = root.matches && root.tagName === 'ARTICLE' ? [root] : [];
+    var q2 = root.querySelectorAll('article');
+    for(var i=0;i<q2.length;i++) arts.push(q2[i]);
+    for(var i=0;i<arts.length;i++){
+      var a = arts[i];
+      if(a.dataset.ftbHidden) continue;
+      if(isSponsoredPost(a)){
+        var cell = a.closest('[data-testid="cellInnerDiv"]');
+        hide(cell || a);
+      }
+    }
+  }
+  var obs = new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if(n.nodeType !== 1) return;
+        scan(n);
+      });
+    });
+  });
+  obs.observe(document.documentElement, {childList:true, subtree:true});
+  scan(document.documentElement);
+  // expose toggle for Python
+  window._ftbSponsorSet = function(enabled){
+    window._ftbSponsorBlockEnabled = enabled;
+    if(enabled) scan(document.documentElement);
+    else unhideAll();
+  };
+})();
+"""
 
 
 # =============================================================================
@@ -411,13 +623,63 @@ class AdBlockInterceptor(QWebEngineUrlRequestInterceptor):
     from X's own domain (x.com).
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, privacy_enabled=True, window=None):
         super().__init__(parent)
         self.blocked_count = 0
+        self.privacy_enabled = privacy_enabled
+        self.window = window
+        self.last_video_url = ""
 
     def interceptRequest(self, info):
+        # 1) NEVER block or mangle media — twimg CDNs 403 if Referer/Client-Hints are wrong
+        try:
+            url = info.requestUrl()
+            scheme = url.scheme().lower()
+            host = url.host().lower()
+            url_str = url.toString()
+            # Capture X video URL so the external decoder script can be launched
+            if (".m3u8" in url_str or "/pu/vid/" in url_str or "/ext_tw_video/" in url_str or "/amplify_video/" in url_str):
+                self.last_video_url = url_str
+                try:
+                    win = self.window
+                    if win:
+                        win._last_video_url = url_str
+                        QTimer.singleShot(0, lambda u=url_str, w=win: w._on_video_captured(u))
+                except Exception:
+                    pass
+            if scheme in ("blob", "data", "mediasource"):
+                return
+            # Local decoder server — always allow (decoded stream back to the page)
+            if host in ("127.0.0.1", "localhost"):
+                return
+            if host == "twimg.com" or host.endswith(".twimg.com"):
+                try:
+                    info.setHttpHeader(b"Referer", b"https://x.com/")
+                    info.setHttpHeader(b"Origin", b"https://x.com")
+                except Exception:
+                    pass
+                return
+            # HLS/mp4 chunks are ResourceType Media — never block
+            try:
+                rt = str(info.resourceType())
+                if "Media" in rt:
+                    return
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # 2) Client Hints for fingerprint (skip for media — already returned)
+        try:
+            info.setHttpHeader(b"sec-ch-ua", b'"Google Chrome";v="133", "Chromium";v="133", "Not-A.Brand";v="99"')
+            info.setHttpHeader(b"sec-ch-ua-mobile", b"?0")
+            info.setHttpHeader(b"sec-ch-ua-platform", b'"Windows"')
+        except Exception:
+            pass
+        if not self.privacy_enabled:
+            return
         host = info.requestUrl().host().lower()
-        # O(1) average: split hostname and check each level against the set
+        if not host:
+            return
         parts = host.split(".")
         for i in range(len(parts)):
             if ".".join(parts[i:]) in AD_DOMAINS:
@@ -439,12 +701,37 @@ class FreeTheBirdPage(QWebEnginePage):
     - Pop-up windows are caught and redirected to the system browser
     """
 
-    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        host = url.host().lower()
+    def __init__(self, profile, parent=None, privacy_enabled=True):
+        super().__init__(profile, parent)
+        self.privacy_enabled = privacy_enabled
+        self._console_handler = None
 
-        # Allow whitelisted X/Twitter domains
-        if host in ALLOWED_HOSTS:
+    def javaScriptConsoleMessage(self, level, msg, line, sourceId):
+        try:
+            if self._console_handler:
+                self._console_handler(level, msg, line, sourceId)
+                # still show video errors in status if handler didn't
+        except Exception:
+            pass
+        try:
+            super().javaScriptConsoleMessage(level, msg, line, sourceId)
+        except Exception:
+            pass
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        # Privacy disabled: let the site navigate freely (fixes blocked login flows)
+        if not self.privacy_enabled:
             return True
+
+        host = url.host().lower()
+        if not host:
+            # blob:, data:, mediasource: — allow (video MSE uses blob:)
+            return True
+
+        # Allow whitelisted X/Twitter/media/verification domains (suffix match)
+        for h in ALLOWED_HOSTS:
+            if host == h or host.endswith("." + h):
+                return True
 
         # Allow authentication providers for login flows (exact match)
         for auth_host in AUTH_HOSTS:
@@ -457,11 +744,22 @@ class FreeTheBirdPage(QWebEnginePage):
         return False
 
     def createWindow(self, window_type):
-        """Handle pop-up windows by redirecting them to the system browser."""
-        page = FreeTheBirdPage(self.profile(), self.parent())
-        page.urlChanged.connect(
-            lambda url: (QDesktopServices.openUrl(url), page.deleteLater())
-        )
+        """Handle pop-up windows. Verification popups (Arkose/reCAPTCHA) stay
+        inside the app; all other external popups open in the system browser."""
+        page = FreeTheBirdPage(self.profile(), self.parent(), self.privacy_enabled)
+
+        def _on_url_changed(url):
+            host = url.host().lower()
+            if not host:
+                return
+            # Keep verification/media/auth challenges inside the app (suffix match)
+            for allowed in (VERIFICATION_HOSTS | ALLOWED_HOSTS | AUTH_HOSTS):
+                if host == allowed or host.endswith("." + allowed):
+                    return
+            QDesktopServices.openUrl(url)
+            page.deleteLater()
+
+        page.urlChanged.connect(_on_url_changed)
         return page
 
 
@@ -491,7 +789,8 @@ class FreeTheBirdWindow(QMainWindow):
     └─────────────────────────────────────────────────────────┘
     """
 
-    def __init__(self, url, refresh_interval, auto_refresh, width, height):
+    def __init__(self, url, refresh_interval, auto_refresh, width, height,
+                 privacy_enabled=True, tray_enabled=True):
         super().__init__()
 
         # -- Load persisted configuration --
@@ -500,29 +799,332 @@ class FreeTheBirdWindow(QMainWindow):
         self.dark_mode = self.cfg.get("dark_mode", True)
         self.refresh_interval = self.cfg.get("refresh_interval", refresh_interval)
         self.auto_refresh_enabled = auto_refresh
+        self.privacy_enabled = privacy_enabled
+        # Tray: CLI --no-tray overrides config; otherwise use persisted config
+        cfg_tray = self.cfg.get("tray_enabled", True)
+        self.tray_enabled = False if not tray_enabled else cfg_tray
         self.app_icon = create_app_icon()
         self.last_title = ""
         self.current_ip = "..."
         self.conn_info = None
 
-        # -- Window setup --
+        # -- Window setup -- start maximized (no left gap on open)
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(self.app_icon)
         self.resize(self.cfg.get("width", width), self.cfg.get("height", height))
+        # maximize on open — user requested full window, keep saved size for restore
+        try:
+            self.setWindowState(Qt.WindowState.WindowMaximized)
+        except Exception:
+            pass
 
-        # -- WebEngine with isolated profile --
+        # -- WebEngine with isolated profile (persistent across sessions) --
         self.profile = QWebEngineProfile(APP_DESKTOP_NAME, self)
+        self.profile.setPersistentStoragePath(os.path.expanduser("~/.local/share/freethebird"))
+        try:
+            self.profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+            )
+        except Exception:
+            pass
+        try:
+            self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+            self.profile.setCachePath(os.path.expanduser("~/.cache/freethebird"))
+        except Exception:
+            pass
         self.profile.setHttpUserAgent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
         )
+        # Download handling — default to Downloads, always ask where to save
+        try:
+            dl_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            if os.path.isdir(dl_dir):
+                self.profile.setDownloadPath(dl_dir)
+            self.profile.downloadRequested.connect(self._on_download_requested)
+        except Exception:
+            pass
 
-        # -- Privacy: attach ad/tracker interceptor --
-        self.ad_interceptor = AdBlockInterceptor(self)
+        # -- Privacy: attach ad/tracker interceptor (always for Client Hints) --
+        self.ad_interceptor = AdBlockInterceptor(self, self.privacy_enabled, window=self)
+        # keep python-side last url in sync with JS
+        self._last_video_url = ""
         self.profile.setUrlRequestInterceptor(self.ad_interceptor)
 
         # -- Browser view --
-        self.page = FreeTheBirdPage(self.profile, self)
+        self.page = FreeTheBirdPage(self.profile, self, self.privacy_enabled)
+
+        # -- Media: allow autoplay + enable every setting X's video player needs --
+        # X uses muted autoplay + MSE (blob:) + H.264/AAC. QtWebEngine on Windows
+        # ships proprietary codecs, but PlaybackRequiresUserGesture + missing
+        # ALLOWED_HOSTS for ton.twimg.com causes "The media could not be played".
+        try:
+            s = self.profile.settings()
+            s.setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+            s.setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
+            s.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+            s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            s.setAttribute(QWebEngineSettings.WebAttribute.AllowWindowActivationFromJavaScript, True)
+            # also apply to the page itself (some Qt versions keep page settings separate)
+            self.page.settings().setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+            self.page.settings().setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
+            self.page.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        except Exception:
+            pass
+
+        # -- Fingerprint: spoof navigator/chrome at DocumentCreation (MainWorld) --
+        fp = QWebEngineScript()
+        fp.setName("fingerprint")
+        fp.setSourceCode(FINGERPRINT_JS)
+        fp.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        fp.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        fp.setRunsOnSubFrames(True)
+        self.profile.scripts().insert(fp)
+
+        # -- Stream patch: if user started a local decoder stream (window._ftbStreamUrl),
+        #    point any new <video> with blob/m3u8 src at the decoded stream. --
+        STREAM_PATCH_JS = r"""
+        (function(){
+          var patched = new WeakSet();
+          function isStreamSrc(v){
+            var s = v.currentSrc || v.src || v.getAttribute('src') || '';
+            return s.indexOf('blob:') === 0 || s.indexOf('.m3u8') !== -1 || s.indexOf('video.twimg.com') !== -1;
+          }
+          function patch(v){
+            try{
+              var w = window._ftbStreamUrl;
+              if(!w || patched.has(v)) return;
+              if(!isStreamSrc(v)) return;
+              patched.add(v);
+              v.muted = true; v.playsInline = true; v.setAttribute('playsinline','');
+              v.src = w; v.load();
+              var p = v.play(); if(p && p.catch) p.catch(function(){});
+            }catch(e){}
+          }
+          try{
+            var obs = new MutationObserver(function(muts){
+              muts.forEach(function(m){
+                if(m.type === 'attributes' && m.target && m.target.tagName === 'VIDEO'){ patch(m.target); return; }
+                m.addedNodes.forEach(function(n){
+                  if(n.tagName === 'VIDEO') patch(n);
+                  else if(n.querySelectorAll) n.querySelectorAll('video').forEach(patch);
+                });
+              });
+            });
+            obs.observe(document.documentElement, {childList:true, subtree:true,
+                                                   attributes:true, attributeFilter:['src']});
+            document.querySelectorAll('video').forEach(patch);
+            setInterval(function(){ document.querySelectorAll('video').forEach(patch); }, 1500);
+          }catch(e){}
+        })();
+        """
+        sp = QWebEngineScript()
+        sp.setName("stream_patch")
+        sp.setSourceCode(STREAM_PATCH_JS)
+        sp.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+        sp.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        sp.setRunsOnSubFrames(True)
+        self.profile.scripts().insert(sp)
+
+        # — Sponsor block: hide "Promoted by" trends and Promoted post cards (exact markers only)
+        sponsor = QWebEngineScript()
+        sponsor.setName("sponsor_block")
+        sponsor.setSourceCode(SPONSOR_BLOCK_JS)
+        sponsor.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+        sponsor.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        sponsor.setRunsOnSubFrames(True)
+        self.profile.scripts().insert(sponsor)
+
+        # — Hijack the tweet's "Reload" button (shown on "The media could not be played")
+        #   so it launches the external decoder for *that specific* video's stream.
+        RELOAD_JS = r"""
+        (function(){
+          // only capture URLs when user explicitly clicks Reload — no scroll auto-play noise
+          window._ftbLastVideoUrl = window._ftbLastVideoUrl || "";
+          window._ftbAllVideoUrls = window._ftbAllVideoUrls || [];
+          var _ftbInterceptionEnabled = false;
+          window._ftbEnableCapture = function(){ _ftbInterceptionEnabled = true; };
+          window._ftbDisableCapture = function(){ _ftbInterceptionEnabled = false; };
+          function _ftbCapture(u){
+            if(!_ftbInterceptionEnabled) return;
+            try{
+              var s = String(u||"");
+              if(s.indexOf('video.twimg.com')!==-1 || s.indexOf('.m3u8')!==-1 || s.indexOf('/pu/vid/')!==-1 || s.indexOf('/ext_tw_video/')!==-1 || s.indexOf('/amplify_video/')!==-1){
+                if(window._ftbAllVideoUrls.indexOf(s)===-1){
+                  window._ftbLastVideoUrl = s;
+                  window._ftbAllVideoUrls.push(s);
+                }
+              }
+            }catch(e){}
+          }
+          try{
+            var _origFetch = window.fetch;
+            window.fetch = function(u){ try{ var s=typeof u==='string'?u:(u&&u.url); if(_ftbInterceptionEnabled) _ftbCapture(s); }catch(e){} return _origFetch.apply(this, arguments); };
+          }catch(e){}
+          try{
+            var _origOpen = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function(m,u){ try{ if(_ftbInterceptionEnabled) _ftbCapture(u); }catch(e){} return _origOpen.apply(this, arguments); };
+          }catch(e){}
+          function _extractUrlsFromContainer(c){
+            if(!c) return [];
+            try{
+              var h = c.innerHTML || "";
+              var out = [];
+              // m3u8 first (what X actually plays), then mp4
+              var reM3u8 = /https:\/\/video\.twimg\.com[^"'\s\\]+\.m3u8[^"'\s\\]*/g;
+              var reMp4  = /https:\/\/video\.twimg\.com[^"'\s\\]+\.mp4[^"'\s\\]*/g;
+              var m;
+              while((m=reM3u8.exec(h))!==null) out.push(m[0].replace(/\\u002F/g,'/').replace(/\\/g,''));
+              while((m=reMp4.exec(h))!==null) out.push(m[0].replace(/\\u002F/g,'/').replace(/\\/g,''));
+              // also check <meta> tags inside container
+              try{
+                var metas = c.querySelectorAll('meta[content*="video.twimg.com"]');
+                metas.forEach(function(el){ var v=el.getAttribute('content'); if(v) out.push(v); });
+              }catch(e){}
+              return out;
+            }catch(e){ return []; }
+          }
+          function _findUrlForButton(btn){
+            // 1) On-demand DOM search in the tweet that owns this Reload button — ignores scroll captures
+            try{
+              var tweet = btn.closest('[data-testid="tweet"], article');
+              // climb a bit to include video player wrapper
+              var c = tweet;
+              for(var i=0;i<4 && c; i++){
+                var urls = _extractUrlsFromContainer(c);
+                if(urls.length) return urls[0]; // first m3u8 in this tweet
+                c = c.parentElement;
+              }
+            }catch(e){}
+            // 2) if DOM had no embedded URL (X loads it via JS), briefly enable capture
+            //    and try to hit the API by forcing the player to retry — but we already
+            //    have Python-side last URL as fallback. Use per-tweet vid id match.
+            try{
+              var c2 = btn.closest('[data-testid="tweet"], article') || btn.closest('div');
+              for(var i=0;i<3 && c2 && !c2.innerHTML.includes('video.twimg.com'); i++) c2 = c2.parentElement;
+              var h = c2 ? c2.innerHTML : "";
+              var m = h.match(/\/(amplify_video|ext_tw_video)\/(\d+)/);
+              var vid = m ? m[2] : "";
+              if(!vid){
+                var m2 = h.match(/\/(\d{18,19})\//);
+                vid = m2 ? m2[1] : "";
+              }
+              if(vid){
+                for(var i=window._ftbAllVideoUrls.length-1;i>=0;i--){
+                  if(window._ftbAllVideoUrls[i].indexOf(vid)!==-1) return window._ftbAllVideoUrls[i];
+                }
+                // also check Python-side via a sync JS var that interceptor mirrors
+                // (interceptor sets window._ftbLastVideoUrl even when _ftbInterceptionEnabled is false?
+                //  we keep it disabled, so not — fallback to global last)
+              }
+            }catch(e){}
+            if(window._ftbLastVideoUrl) return window._ftbLastVideoUrl;
+            return "";
+          }
+          function hookReload(){
+            var candidates = document.querySelectorAll('button, [role="button"], div[role="button"]');
+            var found = 0;
+            candidates.forEach(function(el){
+              if(el.__ftbHooked) return;
+              var t=(el.textContent||'').trim().toLowerCase();
+              if(t!=='reload') return;
+              var p = el;
+              var isVideoError = false;
+              for(var i=0;i<6 && p; i++){
+                p = p.parentElement;
+                if(!p) break;
+                var txt = (p.textContent||'').toLowerCase();
+                if(txt.indexOf('could not be played')!==-1 || txt.indexOf('el medio no se pudo')!==-1){ isVideoError=true; break; }
+              }
+              if(!isVideoError) return;
+              el.__ftbHooked = true;
+              found++;
+              el.style.background = '#1da1f2';
+              el.style.borderRadius = '999px';
+              el.style.cursor = 'pointer';
+              el.title = 'Decode & play THIS video (FreeTheBird)';
+              el.addEventListener('click', function(e){
+                e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation();
+                // enable capture for a short window so the retry fetch is recorded
+                window._ftbEnableCapture();
+                setTimeout(function(){ window._ftbDisableCapture(); }, 4000);
+                // let X retry (it will fetch the m3u8), then grab the URL for this tweet
+                setTimeout(function(){
+                  var u = _findUrlForButton(el);
+                  console.log('[FreeTheBird] reload-video ' + (u||''));
+                }, 600);
+                el.textContent = 'Opening…';
+                setTimeout(function(){ try{ el.textContent='Reload'; }catch(e){} }, 2500);
+                return false;
+              }, true);
+            });
+            if(found) console.log('[FreeTheBird] hooked ' + found + ' Reload button(s)');
+          }
+          var obs = new MutationObserver(hookReload);
+          obs.observe(document.documentElement, {childList:true, subtree:true});
+          hookReload();
+          setInterval(hookReload, 1500);
+          console.log('[FreeTheBird] reload hook installed (per-tweet mode)');
+        })();
+        """
+        rp = QWebEngineScript()
+        rp.setName("reload_patch")
+        rp.setSourceCode(RELOAD_JS)
+        rp.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+        rp.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        rp.setRunsOnSubFrames(True)
+        self.profile.scripts().insert(rp)
+
+        # JS → Python bridge for the hijacked Reload buttons
+        def _js_console(level, msg, line, src_id):
+            try:
+                if "[FreeTheBird] reload-video" in msg:
+                    raw = msg.split("reload-video", 1)[1].strip()
+                    url = ""
+                    if raw:
+                        # raw may be empty or just whitespace
+                        parts = raw.split()
+                        if parts:
+                            url = parts[0]
+                    if not url or not url.startswith("http"):
+                        url = getattr(self, "_last_video_url", "") or getattr(self.ad_interceptor, "last_video_url", "")
+                    if not url or url == "":
+                        # last attempt: pull from JS state
+                        def _got(v):
+                            if v and v.startswith("http"):
+                                self.status_label.setText(f"Got video URL, opening…")
+                                self._play_video(v)
+                            else:
+                                all_urls = ""
+                                try:
+                                    all_urls = getattr(self.ad_interceptor, "last_video_url", "") or getattr(self, "_last_video_url", "")
+                                except Exception:
+                                    pass
+                                msg2 = "No video URL found for this tweet.\n\nCaptured: %s\nTry scrolling the tweet into view, wait for 📹 next to Translate, then click Reload again." % (all_urls[:120] if all_urls else "none")
+                                QMessageBox.information(self, "Video", msg2)
+                                self.status_label.setText("No video URL — open tweet & wait for 📹")
+                        try:
+                            self.page.runJavaScript("(window._ftbLastVideoUrl||window._ftbAllVideoUrls[window._ftbAllVideoUrls.length-1]||'')", _got)
+                        except Exception:
+                            pass
+                        return
+                    self.status_label.setText(f"Opening: {url[:70]}")
+                    self._play_video(url)
+                    return
+                if "[FreeTheBird] captured" in msg or "[FreeTheBird] hooked" in msg or "reload hook" in msg:
+                    # silent — diagnostic, don't spam status bar
+                    return
+                elif "[FreeTheBird]" in msg:
+                    if "lastVideoUrl" not in msg:
+                        self.status_label.setText(msg[:160])
+            except Exception as e:
+                try:
+                    self.status_label.setText(f"Bridge error: {e}")
+                except Exception:
+                    pass
+        self.page._console_handler = _js_console
+
         self.browser = QWebEngineView()
         self.browser.setPage(self.page)
         self.browser.setUrl(QUrl(url))
@@ -720,7 +1322,7 @@ class FreeTheBirdWindow(QMainWindow):
         if title and title != self.last_title:
             if title.startswith("(") and ")" in title:
                 count_str = title[1:title.index(")")]
-                if count_str.isdigit() and not self.isActiveWindow():
+                if count_str.isdigit() and not self.isActiveWindow() and self.tray:
                     self.tray.showMessage(
                         APP_NAME, self.t("new_notif"),
                         QSystemTrayIcon.MessageIcon.Information, 5000,
@@ -738,6 +1340,12 @@ class FreeTheBirdWindow(QMainWindow):
     def _on_load_finished(self, ok):
         """Clear loading indicator when page finishes loading."""
         self._update_status()
+        # sync sponsor block toggle (JS defaults to enabled)
+        try:
+            if not self.cfg.get("sponsor_block", True):
+                self.page.runJavaScript("window._ftbSponsorSet && window._ftbSponsorSet(false);")
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------------
     # THEME — Dark/light mode switching
@@ -757,6 +1365,39 @@ class FreeTheBirdWindow(QMainWindow):
         self._save_state()
         label = self.t("light_mode") if self.dark_mode else self.t("dark_mode")
         self.theme_action.setText(label)
+
+    def _toggle_tray(self, checked):
+        """Enable/disable minimize-to-tray. Persists to config and updates app quit behavior."""
+        self.tray_enabled = checked
+        self.cfg["tray_enabled"] = checked
+        save_config(self.cfg)
+        QApplication.setQuitOnLastWindowClosed(not checked)
+        if checked:
+            if not self.tray:
+                self._create_tray()
+                # re-apply language to new tray menu if needed
+                if hasattr(self, 'tray') and self.tray:
+                    self.tray.show()
+        else:
+            if self.tray:
+                try:
+                    self.tray.hide()
+                except Exception:
+                    pass
+                self.tray = None
+
+    def _toggle_sponsor_block(self, checked):
+        """Toggle sponsor block (Promoted by hide). Persists and updates live page."""
+        self.cfg["sponsor_block"] = checked
+        save_config(self.cfg)
+        try:
+            # window._ftbSponsorSet is defined by SPONSOR_BLOCK_JS
+            js = f"window._ftbSponsorSet && window._ftbSponsorSet({str(checked).lower()});"
+            self.page.runJavaScript(js)
+        except Exception:
+            pass
+        self.status_label.setText("Sponsors hidden" if checked else "Sponsors shown")
+        QTimer.singleShot(2000, self._update_status)
 
     # -------------------------------------------------------------------------
     # LANGUAGE — Hot-swap between Spanish and English
@@ -797,9 +1438,20 @@ class FreeTheBirdWindow(QMainWindow):
         self.switch_action.setText(self.t("switch_to"))
 
         # -- System tray texts --
-        self.tray_show.setText(self.t("show_hide"))
-        self.tray_refresh.setText(self.t("refresh_now"))
-        self.tray_quit.setText(self.t("quit"))
+        if getattr(self, "tray_show", None):
+            self.tray_show.setText(self.t("show_hide"))
+        if getattr(self, "tray_refresh", None):
+            self.tray_refresh.setText(self.t("refresh_now"))
+        if getattr(self, "tray_quit", None):
+            self.tray_quit.setText(self.t("quit"))
+
+        # -- Session menu --
+        self.session_menu.setTitle(self.t("session_menu"))
+
+        # -- Tray toggle --
+        self.tray_toggle_action.setText(self.t("tray_toggle"))
+        if hasattr(self, "sponsor_toggle_action"):
+            self.sponsor_toggle_action.setText(self.t("sponsor_block"))
 
         # -- Credit menu --
         credit_label = "Por @daboblog" if self.lang == "es" else "By @daboblog"
@@ -883,9 +1535,152 @@ class FreeTheBirdWindow(QMainWindow):
     # PURGE — Emergency cache reset (development tool)
     # -------------------------------------------------------------------------
 
+    def _on_video_captured(self, url):
+        """Called from interceptor when a video URL is seen — store for Reload handling (no UI spam)."""
+        try:
+            self._last_video_url = url
+        except Exception:
+            pass
+
+    def _decoder_script(self):
+        """Path to video_decoder.py in the same folder as freethebird.py."""
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_decoder.py")
+
+    def _play_video(self, url):
+        """Launch the separate video_decoder.py pop-out player (has full controls)."""
+        url = (url or "").strip()
+        if not url or not url.startswith("http"):
+            url = getattr(self, "_last_video_url", "") or getattr(self.ad_interceptor, "last_video_url", "")
+        if not url or not url.startswith("http"):
+            QMessageBox.information(self, "Video",
+                "No video URL captured for this tweet.\n\n"
+                "1) Scroll the video tweet fully into view\n"
+                "2) Wait for 📹 to appear next to Translate\n"
+                "3) Click Reload again\n\n"
+                "If it still fails, the video may have expired.")
+            self.status_label.setText("No video URL — wait for 📹")
+            QTimer.singleShot(4000, self._update_status)
+            return
+        script = self._decoder_script()
+        if not os.path.isfile(script):
+            QMessageBox.critical(self, "Video", "video_decoder.py not found next to freethebird.py:\n" + script)
+            return
+        # sanity: does it look like an X video URL?
+        if "video.twimg.com" not in url and ".m3u8" not in url and ".mp4" not in url:
+            # still try — X sometimes serves via other CDNs
+            pass
+        self.status_label.setText(f"Launching decoder: {url[:65]}…")
+        try:
+            # use Popen so main window stays responsive; decoder shows its own status
+            subprocess.Popen([sys.executable, script, url],
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.status_label.setText("Decoder launched — player window should appear")
+        except Exception as e:
+            QMessageBox.critical(self, "Video", f"Could not launch decoder:\n{e}\n\n{script} {url}")
+            self.status_label.setText("Launch failed")
+        QTimer.singleShot(3500, self._update_status)
+
+    def _on_download_requested(self, download):
+        """Handle downloads (images, etc.) — ask user where to save, default Downloads.
+        X serves pbs.twimg.com/media/...?format=jpg without extension, so we infer it."""
+        try:
+            suggested = ""
+            try:
+                suggested = download.downloadFileName() or ""
+            except Exception:
+                pass
+            url_str = ""
+            try:
+                url_str = download.url().toString()
+            except Exception:
+                try:
+                    url_str = download.url().path()
+                except Exception:
+                    pass
+            # fallback to url basename if suggested empty
+            if not suggested:
+                try:
+                    suggested = os.path.basename(urllib.parse.urlparse(url_str).path) or "image"
+                except Exception:
+                    suggested = "image"
+            # strip query artefacts like "?format=jpg"
+            suggested = suggested.split("?")[0].split("&")[0]
+            # infer extension if missing
+            ext = os.path.splitext(suggested)[1].lower()
+            if not ext:
+                # 1) mimeType hint from Qt
+                try:
+                    mime = download.mimeType() if hasattr(download, "mimeType") else ""
+                    mime_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "video/mp4": ".mp4"}
+                    if mime in mime_map:
+                        ext = mime_map[mime]
+                except Exception:
+                    pass
+                # 2) url query format=jpg / format=png
+                if not ext:
+                    try:
+                        q = urllib.parse.parse_qs(urllib.parse.urlparse(url_str).query)
+                        fmt = (q.get("format") or [""])[0].lower()
+                        if fmt in ("jpg", "jpeg"):
+                            ext = ".jpg"
+                        elif fmt in ("png", "webp", "gif", "mp4"):
+                            ext = "." + fmt
+                    except Exception:
+                        pass
+                # 3) path suffix fallback
+                if not ext:
+                    try:
+                        path_ext = os.path.splitext(urllib.parse.urlparse(url_str).path)[1]
+                        if path_ext:
+                            ext = path_ext
+                    except Exception:
+                        pass
+                if not ext:
+                    ext = ".jpg"
+                suggested = suggested + ext
+            dl_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            if not os.path.isdir(dl_dir):
+                dl_dir = os.path.expanduser("~")
+            default_path = os.path.join(dl_dir, suggested)
+            filt = "Images (*.jpg *.jpeg *.png *.webp *.gif);;Videos (*.mp4 *.m3u8);;All files (*)"
+            path, selected = QFileDialog.getSaveFileName(self, "Save as", default_path, filt)
+            if not path:
+                download.cancel()
+                return
+            # if user removed extension, re-add from default
+            if not os.path.splitext(path)[1]:
+                path = path + ext
+            try:
+                download.setDownloadDirectory(os.path.dirname(path) or dl_dir)
+                download.setDownloadFileName(os.path.basename(path))
+            except Exception:
+                try:
+                    download.setPath(path)
+                except Exception:
+                    pass
+            download.accept()
+            self.status_label.setText(f"Downloading {os.path.basename(path)}...")
+            # finished signal is isFinishedChanged in Qt6, fallback to stateChanged
+            try:
+                download.isFinishedChanged.connect(lambda: self.status_label.setText(f"Saved {os.path.basename(path)}") if download.isFinished() else None)
+            except Exception:
+                try:
+                    download.stateChanged.connect(lambda s: self.status_label.setText(f"Saved {os.path.basename(path)}"))
+                except Exception:
+                    pass
+            QTimer.singleShot(6000, self._update_status)
+        except Exception as e:
+            try:
+                download.cancel()
+            except Exception:
+                pass
+            self.status_label.setText(f"Download failed: {e}")
+            QTimer.singleShot(3000, self._update_status)
+
     def _purge_and_restart(self):
         """Purge local app/QtWebEngine state and restart the application."""
-        self.tray.hide()
+        if self.tray:
+            self.tray.hide()
         do_purge()
 
         python = sys.executable
@@ -893,6 +1688,184 @@ class FreeTheBirdWindow(QMainWindow):
         subprocess.Popen(args)
         QApplication.quit()
 
+
+    # -------------------------------------------------------------------------
+    # SESSION IMPORT — Bypass embedded-login block by importing cookies from real browser
+    # X often blocks QtWebEngine logins ("not allowed to log in at this time").
+    # Logging in on real Chrome then pasting cookies here is 100% reliable.
+    # -------------------------------------------------------------------------
+
+    def _import_session_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(self.t("import_title"))
+        dlg.resize(620, 420)
+        lay = QVBoxLayout(dlg)
+        lab = QLabel(self.t("import_instructions"))
+        lab.setWordWrap(True)
+        lay.addWidget(lab)
+        edit = QTextEdit()
+        edit.setPlaceholderText("auth_token=...; ct0=...  or  auth_token: ...  or  JSON  or  cookies.txt")
+        lay.addWidget(edit)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # Add "Open in browser" helper button
+        open_btn = QPushButton(self.t("open_browser_login"))
+        def _open_login():
+            QDesktopServices.openUrl(QUrl("https://x.com/login"))
+        open_btn.clicked.connect(_open_login)
+        btns.addButton(open_btn, QDialogButtonBox.ButtonRole.ActionRole)
+        lay.addWidget(btns)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = edit.toPlainText().strip()
+        if not text:
+            return
+        ok = self._apply_cookies_from_text(text)
+        msg = QMessageBox(self)
+        msg.setWindowTitle(self.t("import_title"))
+        if ok:
+            msg.setText(self.t("import_ok"))
+            if self.dark_mode:
+                msg.setStyleSheet(DARK_DIALOG)
+            msg.exec()
+            self.browser.setUrl(QUrl("https://x.com/home"))
+            self.browser.reload()
+        else:
+            msg.setText(self.t("import_fail"))
+            if self.dark_mode:
+                msg.setStyleSheet(DARK_DIALOG)
+            msg.exec()
+
+    def _apply_cookies_from_text(self, text):
+        cookies = []
+        t = text.strip()
+        if not t:
+            return False
+        # 1) JSON array/object
+        if t.startswith("[") or t.startswith("{"):
+            try:
+                data = json.loads(t)
+                if isinstance(data, dict):
+                    data = [data]
+                for entry in data:
+                    if not isinstance(entry, dict):
+                        continue
+                    name = entry.get("name")
+                    value = entry.get("value")
+                    if not name or value is None:
+                        continue
+                    c = QNetworkCookie(str(name).encode(), str(value).encode())
+                    domain = str(entry.get("domain", ".x.com"))
+                    if not domain.startswith("."):
+                        domain = "." + domain
+                    c.setDomain(domain)
+                    c.setPath(str(entry.get("path", "/")))
+                    if entry.get("secure"):
+                        c.setSecure(True)
+                    if entry.get("httpOnly"):
+                        c.setHttpOnly(True)
+                    cookies.append(c)
+                    # mirror for twitter.com if x.com cookie
+                    if "x.com" in domain:
+                        c2 = QNetworkCookie(str(name).encode(), str(value).encode())
+                        c2.setDomain(domain.replace("x.com", "twitter.com"))
+                        c2.setPath(str(entry.get("path", "/")))
+                        cookies.append(c2)
+            except Exception:
+                pass
+        # 2) Netscape cookies.txt (tab-separated)
+        if not cookies and "\t" in t:
+            for line in t.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) >= 7:
+                    domain, flag, path, secure, expiry, name, value = parts[:7]
+                    c = QNetworkCookie(name.encode(), value.encode())
+                    c.setDomain(domain)
+                    c.setPath(path)
+                    if secure.upper() == "TRUE":
+                        c.setSecure(True)
+                    cookies.append(c)
+                elif len(parts) == 6:
+                    # some exports omit flag
+                    try:
+                        domain, path, secure, expiry, name, value = parts[:6]
+                        c = QNetworkCookie(name.encode(), value.encode())
+                        c.setDomain(domain)
+                        c.setPath(path)
+                        cookies.append(c)
+                    except Exception:
+                        continue
+        # 3) Raw Cookie header: "a=1; b=2" or "auth_token: xxx, ct0: yyy" or bare hex value
+        if not cookies:
+            # avoid treating JSON as header
+            if not t.startswith("["):
+                # split on ; , or newline
+                parts = re.split(r'[;\n]+', t)
+                # also handle comma-separated if no semicolon present
+                if len(parts) == 1 and "," in t and "=" not in t and ":" in t:
+                    parts = re.split(r'[,\n]+', t)
+                for part in parts:
+                    part = part.strip().strip(",")
+                    if not part:
+                        continue
+                    # support both "=" and ":" separators
+                    if "=" in part:
+                        name, value = part.split("=", 1)
+                    elif ":" in part:
+                        name, value = part.split(":", 1)
+                    elif re.fullmatch(r'[a-fA-F0-9]{32,64}', part):
+                        # bare hex token — assume auth_token
+                        name, value = "auth_token", part
+                    else:
+                        continue
+                    name = name.strip().strip('"').strip("'")
+                    value = value.strip().strip('"').strip("'").strip(",")
+                    if not name or not value:
+                        continue
+                    # normalize common names
+                    name = name.strip()
+                    for dom in (".x.com", ".twitter.com"):
+                        c = QNetworkCookie(name.encode(), value.encode())
+                        c.setDomain(dom)
+                        c.setPath("/")
+                        c.setSecure(True)
+                        cookies.append(c)
+                # fallback: regex extract auth_token/ct0 even from messy paste
+                if not cookies:
+                    for m in re.finditer(r'(auth_token|ct0)\s*[:=]\s*([a-fA-F0-9%]{20,})', t):
+                        name, value = m.group(1), m.group(2)
+                        for dom in (".x.com", ".twitter.com"):
+                            c = QNetworkCookie(name.encode(), value.encode())
+                            c.setDomain(dom)
+                            c.setPath("/")
+                            c.setSecure(True)
+                            cookies.append(c)
+        if not cookies:
+            return False
+        # Make cookies persistent (otherwise session cookies vanish on close)
+        far_future = QDateTime.currentDateTime().addDays(400)
+        for c in cookies:
+            if c.expirationDate().isNull() or c.expirationDate() < QDateTime.currentDateTime():
+                c.setExpirationDate(far_future)
+            c.setSecure(True)
+            c.setHttpOnly(False)
+        store = self.profile.cookieStore()
+        for c in cookies:
+            dom = c.domain() or ".x.com"
+            url = QUrl(f"https://{dom.lstrip('.')}/")
+            try:
+                store.setCookie(c, url)
+            except Exception:
+                # fallback: try with QUrl https://x.com/
+                try:
+                    store.setCookie(c, QUrl("https://x.com/"))
+                except Exception:
+                    pass
+        return True
 
     # -------------------------------------------------------------------------
     # MENUBAR — Top menu with all app features
@@ -909,12 +1882,23 @@ class FreeTheBirdWindow(QMainWindow):
         """
         mb = self.menuBar()
 
-        # -- View menu (theme toggle) --
+        # -- View menu (theme toggle + tray toggle + video diag) --
         self.view_menu = mb.addMenu(self.t("view"))
         theme_label = self.t("light_mode") if self.dark_mode else self.t("dark_mode")
         self.theme_action = self.view_menu.addAction(theme_label)
         self.theme_action.triggered.connect(self._toggle_theme)
-
+        self.view_menu.addSeparator()
+        self.tray_toggle_action = QAction(self.t("tray_toggle"), self)
+        self.tray_toggle_action.setCheckable(True)
+        self.tray_toggle_action.setChecked(self.tray_enabled)
+        self.tray_toggle_action.toggled.connect(self._toggle_tray)
+        self.view_menu.addAction(self.tray_toggle_action)
+        self.sponsor_toggle_action = QAction(self.t("sponsor_block"), self)
+        self.sponsor_toggle_action.setCheckable(True)
+        self.sponsor_toggle_action.setChecked(self.cfg.get("sponsor_block", True))
+        self.sponsor_toggle_action.toggled.connect(self._toggle_sponsor_block)
+        self.view_menu.addAction(self.sponsor_toggle_action)
+        self.view_menu.addSeparator()
         # -- IP menu (connection info) --
         self.ip_menu = mb.addMenu(f"\U0001f310 IP: {self.current_ip}")
         self.conn_action = self.ip_menu.addAction(self.t("conn_details"))
@@ -949,6 +1933,13 @@ class FreeTheBirdWindow(QMainWindow):
             )
         )
 
+        # -- Session menu (import from real browser) --
+        self.session_menu = mb.addMenu(self.t("session_menu"))
+        import_action = self.session_menu.addAction(self.t("import_session"))
+        import_action.triggered.connect(self._import_session_dialog)
+        open_login_action = self.session_menu.addAction(self.t("open_browser_login"))
+        open_login_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://x.com/login")))
+
         # -- GNU/Linux love (rightmost) --
         gnu_menu = mb.addMenu("I \u2764\ufe0f GNU/Linux")
         gnu_es = gnu_menu.addAction("Wikipedia (ES)")
@@ -980,6 +1971,18 @@ class FreeTheBirdWindow(QMainWindow):
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, tb)
 
         # Navigation
+        self.back_action = QAction("◀", self)
+        self.back_action.setToolTip("Back (Alt+Left)")
+        self.back_action.triggered.connect(self.browser.back)
+        tb.addAction(self.back_action)
+
+        self.forward_action = QAction("▶", self)
+        self.forward_action.setToolTip("Forward (Alt+Right)")
+        self.forward_action.triggered.connect(self.browser.forward)
+        tb.addAction(self.forward_action)
+
+        tb.addSeparator()
+
         self.home_action = QAction(self.t("home"), self)
         self.home_action.triggered.connect(
             lambda: self.browser.setUrl(QUrl("https://x.com/home"))
@@ -1026,8 +2029,13 @@ class FreeTheBirdWindow(QMainWindow):
         tb.addSeparator()
 
         # Privacy indicator (clickable)
-        self.privacy_label = QLabel(self.t("privacy_on"))
-        self.privacy_label.setStyleSheet("padding: 0 4px; color: #2ecc71;")
+        self.privacy_label = QLabel(
+            self.t("privacy_on") if self.privacy_enabled else "Privacidad: OFF"
+        )
+        self.privacy_label.setStyleSheet(
+            "padding: 0 4px; color: #2ecc71;" if self.privacy_enabled
+            else "padding: 0 4px; color: #e74c3c;"
+        )
         self.privacy_label.mousePressEvent = lambda e: self._show_privacy_info()
         tb.addWidget(self.privacy_label)
 
@@ -1089,6 +2097,13 @@ class FreeTheBirdWindow(QMainWindow):
 
     def _create_tray(self):
         """Create the system tray icon and its context menu."""
+        if not self.tray_enabled:
+            self.tray = None
+            self.tray_toggle = None
+            self.tray_show = None
+            self.tray_refresh = None
+            self.tray_quit = None
+            return
         self.tray = QSystemTrayIcon(self.app_icon, self)
         self._create_tray_menu()
         self.tray.activated.connect(self._tray_activated)
@@ -1135,6 +2150,10 @@ class FreeTheBirdWindow(QMainWindow):
         """
         QShortcut(QKeySequence("F5"), self, self._do_refresh)
         QShortcut(QKeySequence("Ctrl+R"), self, self._toggle_auto_refresh)
+        QShortcut(QKeySequence("Alt+Left"), self, self.browser.back)
+        QShortcut(QKeySequence("Alt+Right"), self, self.browser.forward)
+        QShortcut(QKeySequence("Back"), self, self.browser.back)
+        QShortcut(QKeySequence("Forward"), self, self.browser.forward)
         QShortcut(QKeySequence("Ctrl+H"), self,
                   lambda: self.browser.setUrl(QUrl("https://x.com/home")))
         QShortcut(QKeySequence("Ctrl+Q"), self, QApplication.quit)
@@ -1204,13 +2223,15 @@ class FreeTheBirdWindow(QMainWindow):
         """Update status bar and tray menu to reflect auto-refresh state."""
         if self.auto_refresh_enabled:
             self.toggle_action.setText(self.t("auto_on"))
-            self.tray_toggle.setText(self.t("auto_on"))
+            if getattr(self, "tray_toggle", None):
+                self.tray_toggle.setText(self.t("auto_on"))
             self.status_label.setText(
                 self.t("auto_each").format(self.refresh_interval)
             )
         else:
             self.toggle_action.setText(self.t("auto_off"))
-            self.tray_toggle.setText(self.t("auto_off"))
+            if getattr(self, "tray_toggle", None):
+                self.tray_toggle.setText(self.t("auto_off"))
             self.status_label.setText(self.t("auto_disabled"))
 
     def _toggle_visibility(self):
@@ -1245,28 +2266,43 @@ class FreeTheBirdWindow(QMainWindow):
         self.cfg["dark_mode"] = self.dark_mode
         self.cfg["lang"] = self.lang
         self.cfg["refresh_interval"] = self.refresh_interval
+        self.cfg["tray_enabled"] = self.tray_enabled
+        self.cfg["sponsor_block"] = getattr(self, "sponsor_toggle_action", None).isChecked() if hasattr(self, "sponsor_toggle_action") else self.cfg.get("sponsor_block", True)
         save_config(self.cfg)
 
     def closeEvent(self, event):
-        """Override close: minimize to tray instead of quitting.
+        """Override close: minimize to tray instead of quitting (unless --no-tray).
 
-        If the user holds Shift while closing, the app quits entirely
+        If --no-tray is used or Shift is held while closing, the app quits
         instead of minimizing to the system tray.
         """
+        # stop local decoder server if running
+        try:
+            if getattr(self, "_video_proc", None):
+                self._video_proc.kill()
+        except Exception:
+            pass
+        if not self.tray_enabled:
+            self._save_state()
+            event.accept()
+            QApplication.quit()
+            return
         modifiers = QApplication.keyboardModifiers()
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
             self._save_state()
-            self.tray.hide()
+            if self.tray:
+                self.tray.hide()
             event.accept()
             QApplication.quit()
             return
         event.ignore()
         self._save_state()
         self.hide()
-        self.tray.showMessage(
-            self.t("tray_title"), self.t("tray_msg"),
-            QSystemTrayIcon.MessageIcon.Information, 2000,
-        )
+        if self.tray:
+            self.tray.showMessage(
+                self.t("tray_title"), self.t("tray_msg"),
+                QSystemTrayIcon.MessageIcon.Information, 2000,
+            )
 
     def resizeEvent(self, event):
         """Save window dimensions when resized (debounced, 500ms)."""
@@ -1313,24 +2349,56 @@ def main():
                         help="Initial window height (default: 800)")
     parser.add_argument("--purge", action="store_true",
                         help="Purge QtWebEngine cache before starting")
+    parser.add_argument("--no-privacy", action="store_true",
+                        help="Disable ad-blocking and domain whitelisting "
+                             "(use if the login flow is being blocked)")
+    parser.add_argument("--no-tray", action="store_true",
+                        help="Disable system tray; closing the window quits the app")
     args = parser.parse_args()
 
     if args.purge:
         do_purge()
 
+    # Disable FedCM so Google Sign-In falls back to its classic flow,
+    # which works reliably inside QtWebEngine (FedCM errors with
+    # "Error retrieving a token" otherwise). Also allow video autoplay
+    # and enable accelerated video decode (fixes "The media could not be played").
+    flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+    if "FedCm" not in flags:
+        flags = (flags + " --disable-features=FedCm").strip()
+    if "autoplay-policy" not in flags:
+        flags = (flags + " --autoplay-policy=no-user-gesture-required").strip()
+    # keep GPU acceleration on (some Qt builds disable it which breaks MSE)
+    if "ignore-gpu-blocklist" not in flags:
+        flags = (flags + " --ignore-gpu-blocklist").strip()
+    if "enable-accelerated-video-decode" not in flags:
+        flags = (flags + " --enable-accelerated-video-decode").strip()
+    # Local ffmpeg stream server is http://127.0.0.1. X's Content-Security-Policy
+    # (media-src https://...) would block it, so we disable web security — this lets
+    # the decoded stream load into the page's <video> element. (No install needed.)
+    if "disable-web-security" not in flags:
+        flags = (flags + " --disable-web-security").strip()
+    if "unsafely-treat-insecure-origin-as-secure" not in flags:
+        flags = (flags + ' --unsafely-treat-insecure-origin-as-secure="http://127.0.0.1"').strip()
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setDesktopFileName(APP_DESKTOP_NAME)
-    app.setQuitOnLastWindowClosed(False)
+    app.setQuitOnLastWindowClosed(args.no_tray)
 
     window = FreeTheBirdWindow(
         url=args.url,
         refresh_interval=args.refresh,
-        auto_refresh=not args.no_refresh,
+        auto_refresh=False,
         width=args.width,
         height=args.height,
+        privacy_enabled=not args.no_privacy,
+        tray_enabled=not args.no_tray,
     )
-    window.show()
+    # Sync quit behavior with persisted tray setting (View menu toggle)
+    app.setQuitOnLastWindowClosed(not window.tray_enabled)
+    window.showMaximized()
     sys.exit(app.exec())
 
 
